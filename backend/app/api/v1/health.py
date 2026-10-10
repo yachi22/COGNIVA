@@ -44,7 +44,17 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
         sanitized_msg = re.sub(r"://[^@]+@", "://***@", raw_msg)
         sanitized_msg = re.sub(r"password=[^\s&]+", "password=***", sanitized_msg, flags=re.IGNORECASE)
         sanitized_msg = sanitized_msg.splitlines()[0] if sanitized_msg else ""
-        detail = f"{err_type}: {sanitized_msg}".strip(": ")
+        # Extract target host safely without credentials to help diagnose DNS/host resolution issues
+        target_info = ""
+        try:
+            from sqlalchemy.engine.url import make_url
+            u = make_url(settings.async_database_url)
+            if u.host:
+                target_info = f" (target: {u.host}:{u.port})"
+        except Exception:
+            pass
+
+        detail = f"{err_type}: {sanitized_msg}{target_info}".strip(": ")
 
         # Log to uvicorn.error so Render console logs capture the exact failure
         logging.getLogger("uvicorn.error").error(

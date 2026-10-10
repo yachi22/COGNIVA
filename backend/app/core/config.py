@@ -105,14 +105,40 @@ class Settings(BaseSettings):
     def max_upload_size_bytes(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
+    @staticmethod
+    def _normalize_raw_database_url(url: str) -> str:
+        """
+        Cleans and sanitizes raw database URL string:
+        - Strips whitespace and surrounding quotes
+        - Safely percent-encodes unencoded special characters (e.g. '@' in passwords)
+        """
+        if not url:
+            return url
+        url = url.strip()
+        if (url.startswith('"') and url.endswith('"')) or (url.startswith("'") and url.endswith("'")):
+            url = url[1:-1].strip()
+
+        if "://" in url:
+            scheme, rest = url.split("://", 1)
+            # If rest contains multiple '@', the password contains unencoded '@'
+            if rest.count("@") > 1:
+                import urllib.parse
+                userinfo, hostpath = rest.rsplit("@", 1)
+                if ":" in userinfo:
+                    user, pwd = userinfo.split(":", 1)
+                    if "%" not in pwd:
+                        pwd = urllib.parse.quote(pwd, safe="")
+                    url = f"{scheme}://{user}:{pwd}@{hostpath}"
+        return url
+
     @property
     def async_database_url(self) -> str:
         """
         Returns asynchronous PostgreSQL database URL (postgresql+asyncpg://).
-        Normalizes postgres:// and handles sslmode parameters for asyncpg.
+        Normalizes postgres://, quotes, unencoded passwords, and handles sslmode parameters for asyncpg.
         """
         if self.DATABASE_URL:
-            url = self.DATABASE_URL.strip()
+            url = self._normalize_raw_database_url(self.DATABASE_URL)
             if url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
             elif url.startswith("postgres://"):
@@ -143,7 +169,7 @@ class Settings(BaseSettings):
         Normalizes postgres://, postgresql+asyncpg://, and ssl query parameters for psycopg (libpq).
         """
         if self.DATABASE_URL:
-            url = self.DATABASE_URL.strip()
+            url = self._normalize_raw_database_url(self.DATABASE_URL)
             if url.startswith("postgresql+asyncpg://"):
                 url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
             elif url.startswith("postgres://"):

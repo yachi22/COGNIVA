@@ -42,6 +42,12 @@ def test_database_url_normalization():
     assert "sslmode=require" in s_async.sync_database_url
     assert "ssl=require" not in s_async.sync_database_url
 
+    # Test URL with unencoded '@' in password and surrounding quotes
+    s_at = Settings(DATABASE_URL=' "postgresql://postgres.tenant:my@secret@pooler.supabase.com:5432/postgres" ')
+    assert "my%40secret" in s_at.async_database_url
+    assert "@pooler.supabase.com" in s_at.async_database_url
+    assert "postgresql+asyncpg://" in s_at.async_database_url
+
 
 def test_production_security_validation_rejects_default_secret():
     """Verify that production environment strictly rejects default development SECRET_KEY and forces DEBUG=False."""
