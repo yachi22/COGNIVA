@@ -112,7 +112,7 @@ class Settings(BaseSettings):
         Normalizes postgres:// and handles sslmode parameters for asyncpg.
         """
         if self.DATABASE_URL:
-            url = self.DATABASE_URL
+            url = self.DATABASE_URL.strip()
             if url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
             elif url.startswith("postgres://"):
@@ -120,7 +120,15 @@ class Settings(BaseSettings):
             
             # Translate libpq sslmode parameter for asyncpg compatibility
             if "sslmode=" in url:
-                url = url.replace("sslmode=require", "ssl=require").replace("sslmode=prefer", "ssl=prefer")
+                url = (
+                    url.replace("sslmode=require", "ssl=require")
+                    .replace("sslmode=prefer", "ssl=prefer")
+                    .replace("sslmode=disable", "ssl=disable")
+                    .replace("sslmode=verify-ca", "ssl=verify-ca")
+                    .replace("sslmode=verify-full", "ssl=verify-full")
+                )
+            if "ssl=true" in url:
+                url = url.replace("ssl=true", "ssl=require")
             return url
 
         return (
@@ -132,16 +140,25 @@ class Settings(BaseSettings):
     def sync_database_url(self) -> str:
         """
         Returns synchronous PostgreSQL database URL (postgresql+psycopg://) for Alembic & sync operations.
-        Normalizes postgres:// and postgresql+asyncpg://.
+        Normalizes postgres://, postgresql+asyncpg://, and ssl query parameters for psycopg (libpq).
         """
         if self.DATABASE_URL:
-            url = self.DATABASE_URL
+            url = self.DATABASE_URL.strip()
             if url.startswith("postgresql+asyncpg://"):
                 url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
             elif url.startswith("postgres://"):
                 url = url.replace("postgres://", "postgresql+psycopg://", 1)
             elif url.startswith("postgresql://"):
                 url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+            # Translate asyncpg ssl parameter to libpq sslmode parameter for psycopg compatibility
+            if "ssl=" in url:
+                url = (
+                    url.replace("ssl=require", "sslmode=require")
+                    .replace("ssl=prefer", "sslmode=prefer")
+                    .replace("ssl=disable", "sslmode=disable")
+                    .replace("ssl=true", "sslmode=require")
+                )
             return url
 
         return (

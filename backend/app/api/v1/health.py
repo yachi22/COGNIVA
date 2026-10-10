@@ -28,21 +28,37 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
     Executes SELECT 1 without exposing internal connection strings or credentials.
     """
     db_status = "connected"
+    detail = None
     try:
         await db.execute(text("SELECT 1"))
-    
     except Exception as exc:
         import logging
-        logging.getLogger(__name__).exception(
+        import re
+
+        orig = getattr(exc, "orig", None)
+        root_cause = orig if orig is not None else exc
+        err_type = type(root_cause).__name__
+        raw_msg = str(root_cause)
+
+        # Sanitize error message to prevent credential or URL leakage
+        sanitized_msg = re.sub(r"://[^@]+@", "://***@", raw_msg)
+        sanitized_msg = re.sub(r"password=[^\s&]+", "password=***", sanitized_msg, flags=re.IGNORECASE)
+        sanitized_msg = sanitized_msg.splitlines()[0] if sanitized_msg else ""
+        detail = f"{err_type}: {sanitized_msg}".strip(": ")
+
+        # Log to uvicorn.error so Render console logs capture the exact failure
+        logging.getLogger("uvicorn.error").error(
             "Database readiness check failed: %s",
-            type(exc).__name__,
+            detail,
         )
         db_status = "unavailable"
 
-
-    return {
+    response = {
         "status": "ok" if db_status == "connected" else "degraded",
         "database": db_status,
         "app": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT,
     }
+    if detail:
+        response["detail"] = detail
+    return response

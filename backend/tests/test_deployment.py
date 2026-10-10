@@ -32,9 +32,15 @@ def test_database_url_normalization():
     assert "ssl=require" in async_url
     assert "sslmode=" not in async_url
 
-    # sync psycopg requires postgresql+psycopg://
+    # sync psycopg requires postgresql+psycopg:// and sslmode=require
     sync_url = s.sync_database_url
     assert sync_url.startswith("postgresql+psycopg://")
+    assert "sslmode=require" in sync_url
+
+    # Test URL already with ssl=require (asyncpg format) converted for sync psycopg
+    s_async = Settings(DATABASE_URL="postgresql+asyncpg://user:pass@host:5432/db?ssl=require")
+    assert "sslmode=require" in s_async.sync_database_url
+    assert "ssl=require" not in s_async.sync_database_url
 
 
 def test_production_security_validation_rejects_default_secret():
