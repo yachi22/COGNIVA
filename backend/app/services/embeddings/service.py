@@ -19,7 +19,7 @@ class EmbeddingService:
         self._provider = provider or self._resolve_default_provider()
 
     def _resolve_default_provider(self) -> BaseEmbeddingProvider:
-        provider_name = settings.EMBEDDING_PROVIDER.lower().strip()
+        provider_name = settings.EMBEDDING_PROVIDER.lower().strip().strip("\"'")
         if provider_name == "openai":
             return OpenAIEmbeddingProvider()
         elif provider_name in ("mock", "test"):

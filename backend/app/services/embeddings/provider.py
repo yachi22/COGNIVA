@@ -13,6 +13,9 @@ from app.services.embeddings.base import (
 logger = logging.getLogger("cogniva.embeddings")
 
 
+_UNSET = object()
+
+
 class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
     """
     Production embedding provider calling the OpenAI Embeddings REST API.
@@ -22,12 +25,12 @@ class OpenAIEmbeddingProvider(BaseEmbeddingProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: Optional[str] = _UNSET,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         batch_size: Optional[int] = None,
     ):
-        self._api_key = api_key or settings.OPENAI_API_KEY
+        self._api_key = settings.OPENAI_API_KEY if api_key is _UNSET else api_key
         self._model = model or settings.EMBEDDING_MODEL
         self._base_url = (base_url or settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
         self._batch_size = batch_size or settings.EMBEDDING_BATCH_SIZE

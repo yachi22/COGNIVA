@@ -481,3 +481,185 @@ def test_prompt_injection_defense_boundary():
             assert "You are Cogniva, an enterprise knowledge intelligence assistant" not in ans
 
     asyncio.run(_test())
+
+
+# --------------------------------------------------------------------------
+# 7. Offline Mock RAG Answer Generation & Relevance Regression Tests
+# --------------------------------------------------------------------------
+
+def test_mock_rag_answers_annual_leave_from_relevant_passage_ignoring_unrelated_rap_text():
+    """
+    Regression Test:
+    Verify that when unrelated rap text appears before the leave policy passage,
+    the mock LLM identifies the relevant policy passage and returns '24 days per year'
+    grounded with citation [S1], rather than returning the unrelated rap text.
+    """
+    async def _test():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            email = f"leave_user_{uuid.uuid4().hex[:8]}@cogniva.ai"
+            await client.post("/api/v1/auth/register", json={"email": email, "password": "Password123!", "full_name": "Leave Tester"})
+            login = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+            # Unrelated rap lyrics followed by Acme Technologies employee leave policy
+            doc_text = (
+                "Acme Technologies brand ambassador rap intro!\n"
+                "We drop the beat and rock the code, swagger in the workplace zone.\n"
+                "Listen to the flow, we are the future of corporate swag.\n\n"
+                "Acme Technologies Employee Policy.\n"
+                "Annual leave: Employees receive 24 days per year.\n"
+                "Sick leave: Employees receive 10 days of paid sick leave."
+            )
+            pdf_bytes = create_pdf([doc_text])
+            upload = await client.post(
+                "/api/v1/documents",
+                headers=headers,
+                files={"file": ("acme_policy.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            )
+            doc_id = upload.json()["id"]
+            await client.post(f"/api/v1/documents/{doc_id}/process", headers=headers)
+
+            rag_resp = await client.post(
+                "/api/v1/rag/query",
+                headers=headers,
+                json={"query": "According to the Acme Technologies employee policy, what is the annual leave entitlement?"},
+            )
+            assert rag_resp.status_code == 200
+            data = rag_resp.json()
+
+            # Must return 24 days per year from the relevant policy passage
+            assert "24 days per year" in data["answer"]
+            # Must NOT return the unrelated rap lyrics
+            assert "brand ambassador rap" not in data["answer"].lower()
+            assert "swagger" not in data["answer"].lower()
+            # Must preserve valid citation [S1]
+            assert "[S1]" in data["answer"]
+            assert len(data["citations"]) == 1
+            assert data["citations"][0]["citation_id"] == "S1"
+            assert data["citations"][0]["document_id"] == doc_id
+            assert data["insufficient_evidence"] is False
+
+    asyncio.run(_test())
+
+
+def test_mock_rag_unsupported_question_returns_insufficient_evidence():
+    """
+    Regression Test:
+    Verify that a question unsupported by the retrieved context returns the existing
+    INSUFFICIENT_EVIDENCE_RESPONSE without guessing or fabricating answers.
+    """
+    async def _test():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            email = f"unsupported_{uuid.uuid4().hex[:8]}@cogniva.ai"
+            await client.post("/api/v1/auth/register", json={"email": email, "password": "Password123!", "full_name": "Unsupported Tester"})
+            login = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+            doc_text = "Acme Technologies Employee Policy.\nAnnual leave: Employees receive 24 days per year."
+            pdf_bytes = create_pdf([doc_text])
+            upload = await client.post(
+                "/api/v1/documents",
+                headers=headers,
+                files={"file": ("leave_only.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            )
+            doc_id = upload.json()["id"]
+            await client.post(f"/api/v1/documents/{doc_id}/process", headers=headers)
+
+            # Query about 401k match, which is not in the document
+            rag_resp = await client.post(
+                "/api/v1/rag/query",
+                headers=headers,
+                json={"query": "What is the corporate 401k retirement matching percentage?"},
+            )
+            assert rag_resp.status_code == 200
+            data = rag_resp.json()
+
+            assert data["answer"] == INSUFFICIENT_EVIDENCE_RESPONSE
+            assert data["insufficient_evidence"] is True
+            assert data["citations"] == []
+
+    asyncio.run(_test())
+
+
+def test_mock_rag_incidental_keyword_overlap_does_not_produce_unrelated_answer():
+    """
+    Regression Test:
+    Verify that incidental keyword overlap (e.g. 'Acme Technologies' or 'policy' matching the document header)
+    does not cause the mock LLM to return unrelated document content for an unsupported question.
+    """
+    async def _test():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            email = f"incidental_{uuid.uuid4().hex[:8]}@cogniva.ai"
+            await client.post("/api/v1/auth/register", json={"email": email, "password": "Password123!", "full_name": "Incidental Tester"})
+            login = await client.post("/api/v1/auth/login", json={"email": email, "password": "Password123!"})
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+            doc_text = (
+                "Acme Technologies Employee Policy Handbook.\n"
+                "Section 1: Annual leave is 24 days per year.\n"
+                "Section 2: Health insurance premiums are covered at 80 percent."
+            )
+            pdf_bytes = create_pdf([doc_text])
+            upload = await client.post(
+                "/api/v1/documents",
+                headers=headers,
+                files={"file": ("acme_handbook.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            )
+            doc_id = upload.json()["id"]
+            await client.post(f"/api/v1/documents/{doc_id}/process", headers=headers)
+
+            # Question has incidental overlap with 'Acme Technologies' and 'policy', but the subject ('pet policy for dogs') is absent
+            rag_resp = await client.post(
+                "/api/v1/rag/query",
+                headers=headers,
+                json={"query": "According to the Acme Technologies employee policy, what is the pet policy for dogs in the office?"},
+            )
+            assert rag_resp.status_code == 200
+            data = rag_resp.json()
+
+            # Must return INSUFFICIENT_EVIDENCE_RESPONSE, NOT annual leave or health insurance
+            assert data["answer"] == INSUFFICIENT_EVIDENCE_RESPONSE
+            assert data["insufficient_evidence"] is True
+            assert data["citations"] == []
+            assert "annual leave" not in data["answer"].lower()
+            assert "health insurance" not in data["answer"].lower()
+
+    asyncio.run(_test())
+
+
+def test_provider_factories_select_mock_providers_from_settings_and_environment(monkeypatch):
+    """
+    Regression Test:
+    Verify that both EMBEDDING_PROVIDER=mock and LLM_PROVIDER=mock are properly resolved
+    by the respective service provider factories without making external API calls.
+    """
+    from app.services.llm.service import LLMService
+    from app.services.embeddings.service import EmbeddingService
+    from app.services.llm.client import MockLLMProvider
+    from app.services.embeddings.mock import MockEmbeddingProvider
+    from app.core.config import settings
+
+    # 1. Verify LLM factory resolution with mock
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "mock")
+    llm_svc = LLMService()
+    assert isinstance(llm_svc.provider, MockLLMProvider)
+    assert llm_svc.provider.provider_name == "mock"
+
+    # Verify case-insensitivity and whitespace stripping
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "  MOCK  ")
+    llm_svc_stripped = LLMService()
+    assert isinstance(llm_svc_stripped.provider, MockLLMProvider)
+
+    # 2. Verify Embedding factory resolution with mock
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", "mock")
+    emb_svc = EmbeddingService()
+    assert isinstance(emb_svc.provider, MockEmbeddingProvider)
+    assert emb_svc.provider.provider_name == "mock"
+
+    # Verify case-insensitivity and whitespace stripping
+    monkeypatch.setattr(settings, "EMBEDDING_PROVIDER", ' "mock" ')
+    emb_svc_stripped = EmbeddingService()
+    assert isinstance(emb_svc_stripped.provider, MockEmbeddingProvider)

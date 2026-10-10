@@ -23,7 +23,7 @@ class LLMService:
         self._provider = provider or self._resolve_default_provider()
 
     def _resolve_default_provider(self) -> BaseLLMProvider:
-        provider_name = settings.LLM_PROVIDER.lower().strip()
+        provider_name = settings.LLM_PROVIDER.lower().strip().strip("\"'")
         if provider_name == "openai":
             return OpenAILLMProvider()
         elif provider_name in ("mock", "test"):
