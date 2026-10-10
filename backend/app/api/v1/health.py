@@ -30,8 +30,13 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
     db_status = "connected"
     try:
         await db.execute(text("SELECT 1"))
-    except Exception:
-        db_status = "unavailable"
+    except Exception as exc:
+    import logging
+    logging.getLogger(__name__).exception(
+        "Database readiness check failed: %s",
+        type(exc).__name__,
+    )
+    db_status = "unavailable"
 
     return {
         "status": "ok" if db_status == "connected" else "degraded",
