@@ -41,24 +41,23 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
     const fileName = file.name.toLowerCase();
     const hasValidExt = ALLOWED_EXTENSIONS.some((ext) => fileName.endsWith(ext));
     if (!hasValidExt) {
-      setClientError("Unsupported format. Cogniva accepts PDF (.pdf) and Word (.docx) files only.");
+      setClientError("Unsupported format. Cogniva accepts PDF (.pdf) and Word (.docx) documents only.");
       return;
     }
 
     // Check empty file
     if (file.size === 0) {
-      setClientError("Uploaded file is empty (0 bytes). Please choose a valid document.");
+      setClientError("Uploaded document is empty (0 bytes). Please choose a valid document.");
       return;
     }
 
     // Check max size
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      setClientError(`File size exceeds maximum limit of ${MAX_FILE_SIZE_MB}MB.`);
+      setClientError(`Document size exceeds the maximum limit of ${MAX_FILE_SIZE_MB}MB.`);
       return;
     }
 
     await onUpload(file);
-    // Reset file input value so re-uploading the same filename works
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -123,50 +122,50 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        className={`relative border-2 border-dashed rounded-2xl p-6 sm:p-8 text-center transition-all cursor-pointer ${
+        className={`relative border-2 border-dashed rounded-xl p-6 sm:p-8 text-center transition-colors cursor-pointer select-none ${
           isDragOver
-            ? "border-indigo-500 bg-indigo-50/60 scale-[1.005]"
-            : "border-slate-200 hover:border-indigo-300 bg-white/80 hover:bg-white"
+            ? "border-accent bg-panel/70"
+            : "border-border hover:border-secondary bg-surface"
         } ${isUploading ? "opacity-75 cursor-not-allowed" : ""}`}
       >
-        <div className="w-12 h-12 mx-auto rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mb-3 shadow-xs">
+        <div className="w-10 h-10 mx-auto rounded-lg bg-panel border border-border flex items-center justify-center text-secondary mb-3">
           {isUploading ? (
-            <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+            <Loader2 className="w-5 h-5 animate-spin text-accent" />
           ) : (
-            <UploadCloud className="w-6 h-6" />
+            <UploadCloud className="w-5 h-5 text-accent" />
           )}
         </div>
 
-        <h4 className="text-sm font-semibold text-slate-800 mb-1">
-          {isUploading ? "Uploading document to Cogniva..." : "Drop PDF or DOCX here, or browse files"}
+        <h4 className="text-xs sm:text-sm font-semibold text-primary mb-1">
+          {isUploading ? "Uploading knowledge asset to Cogniva..." : "Drop PDF or DOCX file here, or browse files"}
         </h4>
-        <p className="text-xs text-slate-500 max-w-md mx-auto mb-4">
+        <p className="text-xs text-secondary max-w-md mx-auto mb-4">
           Upload enterprise documentation, research reports, policies, or contracts up to 50MB.
         </p>
 
         {/* Progress Bar when uploading */}
         {isUploading && (
           <div className="max-w-xs mx-auto mb-3">
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+            <div className="w-full bg-panel rounded-full h-1.5 overflow-hidden border border-border">
               <div
-                className="bg-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                className="bg-accent h-1.5 rounded-full transition-all duration-300"
                 style={{ width: `${uploadProgress > 0 ? uploadProgress : 15}%` }}
               />
             </div>
-            <p className="text-[11px] text-indigo-600 font-medium mt-1">
-              {uploadProgress > 0 ? `Uploading: ${uploadProgress}%` : "Processing file..."}
+            <p className="text-[11px] text-accent font-medium mt-1">
+              {uploadProgress > 0 ? `Uploading: ${uploadProgress}%` : "Transferring to storage..."}
             </p>
           </div>
         )}
 
         {/* File Format Tags */}
-        <div className="flex items-center justify-center gap-4 text-[11px] text-slate-400">
-          <span className="flex items-center gap-1">
-            <FileText className="w-3 h-3 text-indigo-500" /> PDF (.pdf)
+        <div className="flex items-center justify-center gap-3 text-[11px] text-secondary">
+          <span className="flex items-center gap-1 font-mono">
+            <FileText className="w-3 h-3 text-secondary" /> PDF (.pdf)
           </span>
           <span>•</span>
-          <span className="flex items-center gap-1">
-            <FileText className="w-3 h-3 text-blue-500" /> Word (.docx)
+          <span className="flex items-center gap-1 font-mono">
+            <FileText className="w-3 h-3 text-secondary" /> Word (.docx)
           </span>
           <span>•</span>
           <span>Max {MAX_FILE_SIZE_MB}MB</span>
@@ -175,9 +174,9 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
       {/* Success Notification */}
       {uploadSuccess && (
-        <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between animate-in fade-in">
+        <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
             <span className="font-medium">{uploadSuccess}</span>
           </div>
           <button
@@ -185,7 +184,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
               e.stopPropagation();
               onClearStatus();
             }}
-            className="text-emerald-700 hover:text-emerald-900 p-1"
+            className="text-emerald-700 hover:text-emerald-900 dark:text-emerald-300 p-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -194,9 +193,9 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
 
       {/* Error Notification */}
       {activeError && (
-        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center justify-between animate-in fade-in">
+        <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
             <span className="font-medium">{activeError}</span>
           </div>
           <button
@@ -205,7 +204,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
               setClientError(null);
               onClearStatus();
             }}
-            className="text-rose-700 hover:text-rose-900 p-1"
+            className="text-rose-700 hover:text-rose-900 dark:text-rose-300 p-1 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>

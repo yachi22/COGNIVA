@@ -11,13 +11,13 @@ export const AppLayout: React.FC = () => {
   const getPageInfo = () => {
     switch (location.pathname) {
       case "/dashboard":
-        return { title: "Dashboard", subtitle: "Workspace overview and recent activity" };
+        return { title: "Dashboard", subtitle: "Operational workspace and real-time knowledge repository metrics" };
       case "/chat":
-        return { title: "Ask Cogniva", subtitle: "Ask questions about your organization's knowledge" };
+        return { title: "Ask Cogniva", subtitle: "Grounded multimodal knowledge agent with verified provenance" };
       case "/documents":
-        return { title: "Documents", subtitle: "Knowledge source library and document ingestion" };
+        return { title: "Documents", subtitle: "Deterministic ingestion, structural parsing, and vector repository" };
       case "/settings":
-        return { title: "Settings", subtitle: "Manage your account, security, and preferences" };
+        return { title: "Settings", subtitle: "Tenant configuration, security protocols, and interface appearance" };
       default:
         return { title: "Cogniva", subtitle: "Enterprise Knowledge Platform" };
     }
@@ -26,7 +26,7 @@ export const AppLayout: React.FC = () => {
   const { title, subtitle } = getPageInfo();
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen bg-canvas text-primary flex transition-colors">
       {/* Sidebar navigation */}
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 

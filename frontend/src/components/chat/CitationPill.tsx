@@ -18,18 +18,18 @@ export const CitationPill: React.FC<CitationPillProps> = ({
     <button
       onClick={onClick}
       type="button"
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-50/80 hover:bg-indigo-100/80 border border-indigo-200/80 text-xs font-medium text-indigo-700 transition-all cursor-pointer text-left shadow-2xs hover:shadow-xs"
+      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-border bg-panel hover:bg-panel/80 text-xs text-primary transition-colors cursor-pointer text-left font-medium select-none"
       title={citationId ? `Inspect source [${citationId}]: ${sourceName}` : `Inspect source: ${sourceName}`}
     >
       {citationId && (
-        <span className="font-semibold text-indigo-800 bg-indigo-100 px-1.5 py-0.5 rounded text-[10px]">
+        <span className="font-semibold text-accent font-mono text-[11px]">
           [{citationId}]
         </span>
       )}
-      <FileText className="w-3 h-3 shrink-0 text-indigo-500" />
-      <span className="truncate max-w-[200px]">{sourceName}</span>
+      <FileText className="w-3 h-3 shrink-0 text-secondary" />
+      <span className="truncate max-w-[180px]">{sourceName}</span>
       {page !== null && page !== undefined && (
-        <span className="text-[11px] text-indigo-500 font-normal">· p.{page}</span>
+        <span className="text-[10px] text-secondary font-mono">· p.{page}</span>
       )}
     </button>
   );

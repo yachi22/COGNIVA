@@ -123,7 +123,7 @@ export const ChatPage: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (query: string) => {
+  const handleSendMessage = async (query: string, isDeepResearch?: boolean) => {
     setError(null);
     const userTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const userMessage: MessageProps = {
@@ -136,53 +136,94 @@ export const ChatPage: React.FC = () => {
     setLoadingChat(true);
 
     try {
-      const response = await queryRAG({
-        query,
-        conversation_id: activeConversation?.id || conversationId || null,
-      });
+      if (isDeepResearch) {
+        const { researchService } = await import("../services/researchService");
+        const res = await researchService.executeDeepResearch({ topic: query });
+        const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-      const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const citations: MessageCitation[] = (res.sources || []).map((s, idx) => ({
+          citationId: `cit_${idx}`,
+          sourceName: s.filename,
+          page: s.page_number,
+          rawCitation: {
+            citation_id: `cit_${idx}`,
+            document_id: s.document_id,
+            document_filename: s.filename,
+            chunk_id: "",
+            chunk_index: idx,
+            page_number: s.page_number,
+            similarity_score: 1.0,
+            cosine_distance: 0.0,
+            metadata: { snippet: s.excerpt },
+          },
+        }));
 
-      const citations: MessageCitation[] = (response.citations && response.citations.length > 0)
-        ? response.citations.map((c) => ({
-            citationId: c.citation_id,
-            sourceName: c.document_filename,
-            page: c.page_number,
-            rawCitation: c,
-          }))
-        : (response.sources || []).map((s) => ({
-            citationId: s.citation_id,
-            sourceName: s.document_filename,
-            page: s.page_number,
-            rawCitation: {
-              citation_id: s.citation_id,
-              document_id: s.document_id,
-              document_filename: s.document_filename,
-              chunk_id: s.chunk_id,
-              chunk_index: s.chunk_index,
-              page_number: s.page_number,
-              similarity_score: s.similarity_score,
-              cosine_distance: s.cosine_distance,
-              metadata: s.metadata,
-            },
-          }));
+        let content = `### Deep Research Dossier: ${res.topic}\n\n`;
+        if (res.subquestions && res.subquestions.length > 0) {
+          content += `**Decomposed Inquiries:**\n${res.subquestions.map((q) => `- ${q}`).join("\n")}\n\n`;
+        }
+        if (res.has_conflicts) {
+          content += `> **Caution:** Potential contradictory or conflicting evidence detected across source documents.\n\n`;
+        }
+        content += res.synthesis;
 
-      const assistantMessage: MessageProps = {
-        role: "assistant",
-        content: response.answer,
-        citations,
-        timestamp: assistantTimestamp,
-      };
+        const assistantMessage: MessageProps = {
+          role: "assistant",
+          content,
+          citations,
+          timestamp: assistantTimestamp,
+        };
 
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // If a new conversation was created by the backend, update URL and list
-      if (response.conversation_id && response.conversation_id !== conversationId) {
-        navigate(`/chat/${response.conversation_id}`, { replace: true });
-        await fetchConversations();
+        setMessages((prev) => [...prev, assistantMessage]);
       } else {
-        // Refresh conversation list to bump updated_at
-        fetchConversations();
+        const response = await queryRAG({
+          query,
+          conversation_id: activeConversation?.id || conversationId || null,
+        });
+
+        const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+        const citations: MessageCitation[] = (response.citations && response.citations.length > 0)
+          ? response.citations.map((c) => ({
+              citationId: c.citation_id,
+              sourceName: c.document_filename,
+              page: c.page_number,
+              rawCitation: c,
+            }))
+          : (response.sources || []).map((s) => ({
+              citationId: s.citation_id,
+              sourceName: s.document_filename,
+              page: s.page_number,
+              rawCitation: {
+                citation_id: s.citation_id,
+                document_id: s.document_id,
+                document_filename: s.document_filename,
+                chunk_id: s.chunk_id,
+                chunk_index: s.chunk_index,
+                page_number: s.page_number,
+                similarity_score: s.similarity_score,
+                cosine_distance: s.cosine_distance,
+                metadata: s.metadata,
+              },
+            }));
+
+        const assistantMessage: MessageProps = {
+          role: "assistant",
+          content: response.answer,
+          citations,
+          timestamp: assistantTimestamp,
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+
+        // If a new conversation was created by the backend, update URL and list
+        if (response.conversation_id && response.conversation_id !== conversationId) {
+          navigate(`/chat/${response.conversation_id}`, { replace: true });
+          await fetchConversations();
+        } else {
+          // Refresh conversation list to bump updated_at
+          fetchConversations();
+        }
       }
     } catch (err: any) {
       const detail = err.response?.data?.detail;
@@ -194,7 +235,7 @@ export const ChatPage: React.FC = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-10rem)] bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+    <div className="flex h-[calc(100vh-8.5rem)] bg-surface border border-border rounded-xl overflow-hidden transition-colors">
       {/* Conversation History Sidebar */}
       <ConversationSidebar
         conversations={conversations}

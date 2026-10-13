@@ -3,23 +3,55 @@
 @tailwind utilities;
 
 :root {
+  --color-canvas: #E9ECE8;
+  --color-surface: #F4F5F2;
+  --color-panel: #DCE3DC;
+  --color-border: #CCD5CC;
+  --color-nav-bg: #252B27;
+  --color-nav-text: #F4F5F2;
+  --color-nav-muted: #9EA8A0;
+  --color-accent: #267653;
+  --color-accent-hover: #1E5D42;
+  --color-accent-subtle: #D6E6DC;
+  --color-text-primary: #1A201C;
+  --color-text-secondary: #4D5850;
+  --color-text-muted: #78857C;
+
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Helvetica Neue", Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light;
 }
 
+.dark {
+  --color-canvas: #171C19;
+  --color-surface: #202622;
+  --color-panel: #2C352F;
+  --color-border: #39433C;
+  --color-nav-bg: #121614;
+  --color-nav-text: #F4F5F2;
+  --color-nav-muted: #88948B;
+  --color-accent: #42B883;
+  --color-accent-hover: #36996D;
+  --color-accent-subtle: #1E3A2D;
+  --color-text-primary: #F4F5F2;
+  --color-text-secondary: #C0C8C1;
+  --color-text-muted: #8A968C;
+
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background-color: #f8fafc; /* slate-50 */
-  color: #0f172a; /* slate-900 */
+  background-color: var(--color-canvas);
+  color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom subtle scrollbar */
+/* Accessible subtle scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -28,9 +60,9 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
+  background: var(--color-border);
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--color-text-muted);
 }

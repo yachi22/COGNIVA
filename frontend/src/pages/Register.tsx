@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Sparkles, Mail, Lock, User as UserIcon, AlertCircle, ArrowRight } from "lucide-react";
+import { Layers, Mail, Lock, User as UserIcon, AlertCircle, ArrowRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import Input from "../components/common/Input";
 import Button from "../components/common/Button";
+import ThemeToggle from "../components/common/ThemeToggle";
 
 export const Register: React.FC = () => {
   const { register, isLoading, error, clearError } = useAuth();
@@ -50,28 +51,28 @@ export const Register: React.FC = () => {
   const displayedError = localError || error;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-primary flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Link to="/" className="inline-flex items-center gap-2.5 group mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xs group-hover:scale-105 transition-transform">
-            <Sparkles className="w-5 h-5" />
+        <Link to="/" className="inline-flex items-center gap-2.5 mb-3">
+          <div className="w-9 h-9 rounded-md bg-[#267653] dark:bg-[#42B883] text-white dark:text-[#121614] flex items-center justify-center font-bold text-sm shadow-xs">
+            <Layers className="w-4 h-4" />
           </div>
-          <span className="text-2xl font-bold tracking-tight text-slate-900">
+          <span className="text-xl font-bold tracking-wide uppercase text-primary">
             Cogniva
           </span>
         </Link>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-          Create your account
+        <h2 className="text-lg font-bold text-primary tracking-tight">
+          Register Enterprise Workspace
         </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Get started with enterprise-grade document intelligence
+        <p className="mt-1 text-xs text-secondary">
+          Deploy an isolated tenant workspace with deterministic vector index
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 sm:px-10 border border-slate-200/90 rounded-2xl shadow-sm">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-surface py-7 px-6 sm:px-8 border border-border rounded-xl shadow-xs transition-colors">
           {displayedError && (
-            <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200/80 flex items-start gap-2.5 text-xs text-rose-700 animate-in fade-in duration-150">
+            <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{displayedError}</span>
             </div>
@@ -89,7 +90,7 @@ export const Register: React.FC = () => {
             />
 
             <Input
-              label="Email address"
+              label="Work Email"
               type="email"
               value={email}
               onChange={(e) => {
@@ -113,7 +114,7 @@ export const Register: React.FC = () => {
               placeholder="••••••••"
               leftIcon={<Lock className="w-4 h-4" />}
               autoComplete="new-password"
-              helperText="Must be at least 8 characters"
+              helperText="Encrypted with 12-round salted bcrypt"
               required
             />
 
@@ -134,24 +135,28 @@ export const Register: React.FC = () => {
             <Button
               type="submit"
               variant="primary"
-              size="lg"
+              size="md"
               className="w-full mt-2"
               isLoading={isLoading}
               icon={<ArrowRight className="w-4 h-4" />}
             >
-              Create Account
+              Provision Account
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-xs text-slate-500 pt-6 border-t border-slate-100">
-            Already have an account?{" "}
+          <div className="mt-5 text-center text-xs text-secondary pt-5 border-t border-border flex items-center justify-between">
+            <span>Already have an account?</span>
             <Link
               to="/login"
-              className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+              className="font-semibold text-accent hover:underline transition-colors"
             >
-              Sign in
+              Sign in →
             </Link>
           </div>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <ThemeToggle compact />
         </div>
       </div>
     </div>

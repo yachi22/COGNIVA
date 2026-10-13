@@ -13,11 +13,22 @@ import {
   Eye,
   X,
   Layers,
+  Copy,
+  Check,
+  Sparkles,
+  Table,
+  GitCompare,
+  FolderPlus,
 } from "lucide-react";
 import Button from "../common/Button";
 import EmptyState from "../common/EmptyState";
 import Badge from "../common/Badge";
 import { DocumentItem, ExtractedDocument } from "../../types/document";
+import SummaryModal from "./SummaryModal";
+import StructuredExtractModal from "./StructuredExtractModal";
+import ComparisonModal from "./ComparisonModal";
+import ReportModal from "./ReportModal";
+import CollectionModal from "./CollectionModal";
 
 interface DocumentTableProps {
   documents: DocumentItem[];
@@ -42,10 +53,21 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Multi-selection state
+  const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
+
+  // Modals state
+  const [summarizeDoc, setSummarizeDoc] = useState<DocumentItem | null>(null);
+  const [extractDoc, setExtractDoc] = useState<DocumentItem | null>(null);
+  const [isComparing, setIsComparing] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [collectionDocId, setCollectionDocId] = useState<string | null>(null);
+
   // Modal inspection state for extracted text
   const [inspectDoc, setInspectDoc] = useState<DocumentItem | null>(null);
   const [extractedData, setExtractedData] = useState<ExtractedDocument | null>(null);
   const [loadingExtracted, setLoadingExtracted] = useState(false);
+  const [copiedUnit, setCopiedUnit] = useState<number | null>(null);
 
   const filteredDocs = documents.filter((doc) => {
     const name = (doc.original_filename || doc.filename || "").toLowerCase();
@@ -83,6 +105,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     try {
       await onDelete(id);
       setConfirmDeleteId(null);
+      setSelectedDocIds((prev) => prev.filter((dId) => dId !== id));
     } finally {
       setDeletingId(null);
     }
@@ -102,12 +125,37 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     }
   };
 
+  const handleCopyUnit = (seq: number, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedUnit(seq);
+    setTimeout(() => setCopiedUnit(null), 2000);
+  };
+
+  const toggleSelectDoc = (id: string) => {
+    setSelectedDocIds((prev) =>
+      prev.includes(id) ? prev.filter((dId) => dId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    const processedIds = filteredDocs
+      .filter((d) => d.status === "processed")
+      .map((d) => d.id);
+    if (selectedDocIds.length === processedIds.length) {
+      setSelectedDocIds([]);
+    } else {
+      setSelectedDocIds(processedIds);
+    }
+  };
+
+  const selectedDocuments = documents.filter((d) => selectedDocIds.includes(d.id));
+
   const renderStatusBadge = (doc: DocumentItem) => {
     const isProcessing = processingIds[doc.id] || doc.status === "processing";
 
     if (isProcessing) {
       return (
-        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
           <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
           Processing
         </span>
@@ -117,7 +165,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     switch (doc.status) {
       case "processed":
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
             Processed
           </span>
@@ -125,7 +173,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       case "failed":
         return (
           <span
-            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-100/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
             title={doc.metadata?.error || "Extraction failed"}
           >
             <AlertCircle className="w-3 h-3 text-rose-600" />
@@ -134,7 +182,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         );
       default:
         return (
-          <Badge variant="secondary" size="sm">
+          <Badge variant="secondary" size="xs">
             Uploaded
           </Badge>
         );
@@ -142,17 +190,17 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   };
 
   return (
-    <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+    <div className="bg-surface border border-border rounded-xl overflow-hidden transition-colors">
       {/* Table Header Controls */}
-      <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
+      <div className="p-3.5 sm:p-4 border-b border-border flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between bg-panel/30">
         <div className="relative flex-1 max-w-sm">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-secondary pointer-events-none" />
           <input
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             placeholder="Search documents by name, type, or status..."
-            className="w-full pl-9 pr-3.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500"
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface border border-border rounded-lg text-primary placeholder:text-secondary/70 focus:outline-none focus:border-accent"
           />
         </div>
 
@@ -160,7 +208,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
           {onUploadClick && (
             <Button
               variant="primary"
-              size="sm"
+              size="xs"
               icon={<Upload className="w-3.5 h-3.5" />}
               onClick={onUploadClick}
             >
@@ -170,28 +218,65 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         </div>
       </div>
 
+      {/* Multi-Selection Action Ribbon */}
+      {selectedDocIds.length > 0 && (
+        <div className="px-4 py-2 bg-accent/10 border-b border-accent/20 flex items-center justify-between flex-wrap gap-2 text-xs animate-in fade-in">
+          <span className="font-medium text-primary">
+            {selectedDocIds.length} {selectedDocIds.length === 1 ? "document" : "documents"} selected
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => setIsComparing(true)}
+              disabled={selectedDocIds.length < 2 || selectedDocIds.length > 5}
+              className="text-[11px] h-6.5 flex items-center gap-1"
+              title={selectedDocIds.length < 2 ? "Select at least 2 documents" : undefined}
+            >
+              <GitCompare className="w-3 h-3 text-accent" />
+              Compare ({selectedDocIds.length})
+            </Button>
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => setIsGeneratingReport(true)}
+              className="text-[11px] h-6.5 flex items-center gap-1"
+            >
+              <FileText className="w-3 h-3 text-accent" />
+              Generate Report
+            </Button>
+            <button
+              onClick={() => setSelectedDocIds([])}
+              className="text-[11px] text-secondary hover:text-primary transition-colors ml-1 cursor-pointer"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Loading Skeleton */}
       {isLoading ? (
-        <div className="p-12 text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mx-auto mb-2" />
-          <p className="text-xs text-slate-500">Loading documents from PostgreSQL...</p>
+        <div className="p-12 text-center text-secondary">
+          <Loader2 className="w-6 h-6 animate-spin text-accent mx-auto mb-2" />
+          <p className="text-xs">Loading documents from PostgreSQL repository...</p>
         </div>
       ) : documents.length === 0 ? (
         /* Genuine Empty State: No Documents */
         <div className="p-8 sm:p-12">
           <EmptyState
-            icon={<FileText className="w-6 h-6 text-slate-400" />}
-            title="No documents yet"
-            description="Upload your first document to start asking Cogniva questions. Supported formats include PDF (.pdf) and Word (.docx)."
+            icon={<FileText className="w-6 h-6 text-secondary" />}
+            title="Knowledge repository is empty"
+            description="Upload enterprise documentation (PDF, Word, or CSV) to generate structural vector chunks with page provenance."
             action={
               onUploadClick ? (
                 <Button
                   variant="outline"
-                  size="sm"
+                  size="xs"
                   icon={<Upload className="w-3.5 h-3.5" />}
                   onClick={onUploadClick}
                 >
-                  Upload Document
+                  Upload First Document
                 </Button>
               ) : undefined
             }
@@ -200,9 +285,9 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
       ) : filteredDocs.length === 0 ? (
         /* Search Query Has No Matches */
         <div className="p-8 sm:p-12 text-center">
-          <p className="text-sm font-medium text-slate-700">No matching documents</p>
-          <p className="text-xs text-slate-400 mt-1">
-            No documents matched your search query &ldquo;{searchTerm}&rdquo;.
+          <p className="text-xs sm:text-sm font-medium text-primary">No matching knowledge assets</p>
+          <p className="text-xs text-secondary mt-1">
+            No documents matched &ldquo;{searchTerm}&rdquo;. Try another search term.
           </p>
         </div>
       ) : (
@@ -210,138 +295,180 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="border-b border-slate-100 bg-slate-50 text-slate-500 font-medium">
-                <th className="py-3 px-4">Document Name</th>
-                <th className="py-3 px-4">Format</th>
-                <th className="py-3 px-4">Size</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Extraction Details</th>
-                <th className="py-3 px-4">Uploaded</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+              <tr className="border-b border-border bg-panel/50 text-secondary font-medium">
+                <th className="py-2.5 px-3 w-8 text-center">
+                  <input
+                    type="checkbox"
+                    checked={
+                      selectedDocIds.length > 0 &&
+                      selectedDocIds.length ===
+                        filteredDocs.filter((d) => d.status === "processed").length
+                    }
+                    onChange={toggleSelectAll}
+                    className="rounded border-border text-accent focus:ring-accent cursor-pointer"
+                  />
+                </th>
+                <th className="py-2.5 px-3">Document Asset</th>
+                <th className="py-2.5 px-3">Format</th>
+                <th className="py-2.5 px-3">Size</th>
+                <th className="py-2.5 px-3">Status</th>
+                <th className="py-2.5 px-3">Indexing Details</th>
+                <th className="py-2.5 px-3">Ingested</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-border">
               {filteredDocs.map((doc) => {
-                const isPdf = doc.file_type.toLowerCase() === "pdf";
                 const isConfirming = confirmDeleteId === doc.id;
                 const isDeleting = deletingId === doc.id;
                 const isProcessing = processingIds[doc.id] || doc.status === "processing";
+                const isSelected = selectedDocIds.includes(doc.id);
 
                 return (
                   <tr
                     key={doc.id}
-                    className="hover:bg-slate-50/70 transition-colors group"
+                    className={`hover:bg-panel/40 transition-colors group ${
+                      isSelected ? "bg-accent/5" : ""
+                    }`}
                   >
-                    <td className="py-3.5 px-4 font-medium text-slate-900">
-                      <div className="flex items-center gap-2.5 max-w-xs sm:max-w-sm truncate">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                            isPdf
-                              ? "bg-rose-50 text-rose-600 border border-rose-100"
-                              : "bg-blue-50 text-blue-600 border border-blue-100"
-                          }`}
-                        >
-                          <FileText className="w-4 h-4" />
+                    <td className="py-3 px-3 text-center">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        disabled={doc.status !== "processed"}
+                        onChange={() => toggleSelectDoc(doc.id)}
+                        className="rounded border-border text-accent focus:ring-accent cursor-pointer disabled:opacity-40"
+                      />
+                    </td>
+
+                    <td className="py-3 px-3 font-medium text-primary">
+                      <div className="flex items-center gap-2 max-w-xs sm:max-w-sm truncate">
+                        <div className="w-7 h-7 rounded bg-panel border border-border flex items-center justify-center shrink-0 text-secondary">
+                          <FileText className="w-3.5 h-3.5" />
                         </div>
                         <div className="truncate">
-                          <p className="text-xs font-medium text-slate-900 truncate">
+                          <p className="text-xs font-medium text-primary truncate">
                             {doc.original_filename || doc.filename}
                           </p>
-                          <p className="text-[10px] text-slate-400 font-mono truncate">
-                            ID: {doc.id.slice(0, 8)}...
+                          <p className="text-[10px] text-secondary font-mono truncate">
+                            UUID: {doc.id.slice(0, 8)}...
                           </p>
                         </div>
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4">
-                      <Badge variant={isPdf ? "danger" : "info"} size="sm">
+                    <td className="py-3 px-3">
+                      <Badge variant="neutral" size="xs">
                         {doc.file_type.toUpperCase()}
                       </Badge>
                     </td>
 
-                    <td className="py-3.5 px-4 text-slate-500 font-medium">
-                      <div className="flex items-center gap-1.5 text-slate-500">
-                        <HardDrive className="w-3 h-3 text-slate-400" />
+                    <td className="py-3 px-3 text-secondary font-mono">
+                      <div className="flex items-center gap-1.5">
+                        <HardDrive className="w-3 h-3 text-secondary" />
                         <span>{formatFileSize(doc.metadata?.size_bytes)}</span>
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 whitespace-nowrap">
+                    <td className="py-3 px-3 whitespace-nowrap">
                       {renderStatusBadge(doc)}
                     </td>
 
                     {/* Extraction Details column */}
-                    <td className="py-3.5 px-4 text-slate-600">
+                    <td className="py-3 px-3 text-secondary">
                       {doc.status === "processed" ? (
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-800">
+                          <span className="font-medium text-primary">
                             {doc.metadata?.total_pages
                               ? `${doc.metadata.total_pages} pages`
                               : `${doc.metadata?.total_units || 0} units`}
                           </span>
-                          <span className="text-slate-400">•</span>
-                          <span className="text-slate-500">
+                          <span>•</span>
+                          <span className="font-mono">
                             {doc.metadata?.total_words?.toLocaleString() || 0} words
                           </span>
                         </div>
                       ) : doc.status === "failed" ? (
-                        <span className="text-rose-600 font-medium truncate max-w-[180px] inline-block">
-                          {doc.metadata?.error || "Extraction error"}
+                        <span className="text-rose-600 dark:text-rose-400 font-medium truncate max-w-[180px] inline-block">
+                          {doc.metadata?.error || "Pipeline error"}
                         </span>
                       ) : (
-                        <span className="text-slate-400 italic">Pending extraction</span>
+                        <span className="text-secondary italic">Pending extraction</span>
                       )}
                     </td>
 
-                    <td className="py-3.5 px-4 text-slate-500 whitespace-nowrap">
-                      <div className="flex items-center gap-1.5 text-slate-500">
-                        <Calendar className="w-3 h-3 text-slate-400" />
+                    <td className="py-3 px-3 text-secondary whitespace-nowrap font-mono text-[11px]">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3 h-3 text-secondary" />
                         <span>{formatDate(doc.created_at)}</span>
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center justify-end gap-1.5">
+                    <td className="py-3 px-3 text-right whitespace-nowrap">
+                      <div className="inline-flex items-center justify-end gap-1">
                         {/* Process / Extract button if uploaded or failed */}
                         {(doc.status === "uploaded" || doc.status === "failed") && onProcess && (
                           <button
                             onClick={() => onProcess(doc.id)}
                             disabled={isProcessing}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:opacity-50 transition-colors"
-                            title="Extract text content"
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-border bg-panel hover:bg-panel/80 text-primary disabled:opacity-50 transition-colors cursor-pointer"
+                            title="Execute parsing and embedding"
                           >
-                            <Cpu className="w-3 h-3 text-indigo-600" />
-                            <span>{doc.status === "failed" ? "Retry" : "Extract"}</span>
+                            <Cpu className="w-3 h-3 text-accent" />
+                            <span>{doc.status === "failed" ? "Retry" : "Process"}</span>
                           </button>
                         )}
 
-                        {/* View Extracted Content button if processed */}
-                        {doc.status === "processed" && onViewExtracted && (
-                          <button
-                            onClick={() => handleInspect(doc)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
-                            title="Inspect extracted page text"
-                          >
-                            <Eye className="w-3 h-3 text-slate-600" />
-                            <span>View Text</span>
-                          </button>
+                        {/* Intelligence Actions (Summary, Extract, Collection) */}
+                        {doc.status === "processed" && (
+                          <>
+                            <button
+                              onClick={() => setSummarizeDoc(doc)}
+                              className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-primary transition-colors cursor-pointer"
+                              title="Executive Document Summary"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-accent" />
+                            </button>
+                            <button
+                              onClick={() => setExtractDoc(doc)}
+                              className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-primary transition-colors cursor-pointer"
+                              title="Extract Structured Data & CSV"
+                            >
+                              <Table className="w-3.5 h-3.5 text-secondary" />
+                            </button>
+                            <button
+                              onClick={() => setCollectionDocId(doc.id)}
+                              className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-primary transition-colors cursor-pointer"
+                              title="Assign to Collection"
+                            >
+                              <FolderPlus className="w-3.5 h-3.5 text-secondary" />
+                            </button>
+                            {onViewExtracted && (
+                              <button
+                                onClick={() => handleInspect(doc)}
+                                className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-primary transition-colors cursor-pointer"
+                                title="Inspect extracted structured units"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-secondary" />
+                              </button>
+                            )}
+                          </>
                         )}
 
-                        {/* Delete Action */}
+                        {/* Delete Action with inline confirm */}
                         {isConfirming ? (
-                          <div className="inline-flex items-center gap-1 animate-in fade-in">
+                          <div className="inline-flex items-center gap-1 bg-surface border border-border rounded p-0.5 ml-1">
                             <button
                               onClick={() => handleDelete(doc.id)}
                               disabled={isDeleting}
-                              className="px-2 py-1 text-[11px] font-medium rounded-md bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+                              className="px-2 py-0.5 text-[10px] font-medium rounded bg-rose-700 text-white hover:bg-rose-800 disabled:opacity-50 cursor-pointer"
                             >
-                              {isDeleting ? "..." : "Confirm"}
+                              {isDeleting ? "..." : "Delete"}
                             </button>
                             <button
                               onClick={() => setConfirmDeleteId(null)}
                               disabled={isDeleting}
-                              className="px-2 py-1 text-[11px] font-medium rounded-md bg-slate-100 text-slate-600 hover:bg-slate-200"
+                              className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-panel text-secondary hover:text-primary cursor-pointer"
                             >
                               Cancel
                             </button>
@@ -349,10 +476,10 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                         ) : (
                           <button
                             onClick={() => setConfirmDeleteId(doc.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                            title="Delete document"
+                            className="p-1.5 rounded text-secondary hover:text-rose-600 hover:bg-panel transition-colors cursor-pointer ml-1"
+                            title="Safe delete document"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                       </div>
@@ -367,74 +494,85 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 
       {/* Extracted Content Inspection Modal */}
       {inspectDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-surface border border-border rounded-xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden text-primary">
+            <div className="p-4 border-b border-border flex items-center justify-between bg-panel/40">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-7 h-7 rounded bg-panel border border-border flex items-center justify-center text-accent shrink-0">
                   <Layers className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    Extracted Text & Provenance
+                <div className="min-w-0">
+                  <h3 className="text-xs sm:text-sm font-semibold text-primary truncate">
+                    Structured Ingestion Units & Provenance
                   </h3>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-[10px] text-secondary truncate">
                     {inspectDoc.original_filename || inspectDoc.filename}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setInspectDoc(null)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+                className="p-1 rounded text-secondary hover:text-primary hover:bg-panel cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-3 flex-1">
               {loadingExtracted ? (
-                <div className="py-12 text-center">
-                  <Loader2 className="w-6 h-6 animate-spin text-indigo-600 mx-auto mb-2" />
-                  <p className="text-xs text-slate-500">Loading structured document units...</p>
+                <div className="py-12 text-center text-secondary">
+                  <Loader2 className="w-5 h-5 animate-spin text-accent mx-auto mb-2" />
+                  <p className="text-xs">Loading structured document units...</p>
                 </div>
               ) : extractedData && extractedData.units.length > 0 ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-secondary bg-panel/50 p-2.5 rounded-lg border border-border font-mono text-[11px]">
                     <span>
-                      <strong>Format:</strong> {extractedData.file_type.toUpperCase()}
+                      Format: <strong className="text-primary">{extractedData.file_type.toUpperCase()}</strong>
                     </span>
                     <span>
-                      <strong>Units:</strong> {extractedData.total_units}
+                      Units: <strong className="text-primary">{extractedData.total_units}</strong>
                     </span>
                     <span>
-                      <strong>Words:</strong> {extractedData.total_words.toLocaleString()}
+                      Words: <strong className="text-primary">{extractedData.total_words.toLocaleString()}</strong>
                     </span>
                     {extractedData.total_pages && (
                       <span>
-                        <strong>Pages:</strong> {extractedData.total_pages}
+                        Pages: <strong className="text-primary">{extractedData.total_pages}</strong>
                       </span>
                     )}
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-2.5">
                     {extractedData.units.map((unit) => (
                       <div
                         key={unit.sequence_number}
-                        className="p-3.5 rounded-xl border border-slate-200/80 bg-slate-50/50 hover:bg-white transition-colors"
+                        className="p-3 rounded-lg border border-border bg-panel/30 hover:bg-panel/60 transition-colors"
                       >
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                          <span className="text-[10px] font-semibold text-accent bg-panel px-2 py-0.5 rounded border border-border font-mono">
                             {unit.page_number !== null
                               ? `Page ${unit.page_number}`
                               : `Unit #${unit.sequence_number} (${unit.unit_type})`}
                           </span>
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            Seq {unit.sequence_number}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-secondary font-mono">
+                              Seq {unit.sequence_number}
+                            </span>
+                            <button
+                              onClick={() => handleCopyUnit(unit.sequence_number, unit.text)}
+                              className="p-1 rounded text-secondary hover:text-primary hover:bg-panel transition-colors cursor-pointer"
+                              title="Copy unit text"
+                            >
+                              {copiedUnit === unit.sequence_number ? (
+                                <Check className="w-3 h-3 text-accent" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                        <p className="text-xs text-primary whitespace-pre-wrap leading-relaxed font-sans">
                           {unit.text}
                         </p>
                       </div>
@@ -442,17 +580,16 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                   </div>
                 </div>
               ) : (
-                <div className="py-12 text-center text-xs text-slate-500">
+                <div className="py-12 text-center text-xs text-secondary">
                   No extracted content available for this document.
                 </div>
               )}
             </div>
 
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end">
+            <div className="p-3 border-t border-border bg-panel/30 flex justify-end">
               <Button
                 variant="outline"
-                size="sm"
+                size="xs"
                 onClick={() => setInspectDoc(null)}
               >
                 Close
@@ -460,6 +597,43 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Intelligence Modals */}
+      {summarizeDoc && (
+        <SummaryModal
+          document={summarizeDoc}
+          onClose={() => setSummarizeDoc(null)}
+        />
+      )}
+
+      {extractDoc && (
+        <StructuredExtractModal
+          document={extractDoc}
+          onClose={() => setExtractDoc(null)}
+        />
+      )}
+
+      {isComparing && (
+        <ComparisonModal
+          documents={selectedDocuments}
+          onClose={() => setIsComparing(false)}
+        />
+      )}
+
+      {isGeneratingReport && (
+        <ReportModal
+          documents={documents}
+          selectedDocumentIds={selectedDocIds}
+          onClose={() => setIsGeneratingReport(false)}
+        />
+      )}
+
+      {collectionDocId && (
+        <CollectionModal
+          assignDocumentId={collectionDocId}
+          onClose={() => setCollectionDocId(null)}
+        />
       )}
     </div>
   );

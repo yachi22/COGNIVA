@@ -1,9 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
-import { Sparkles, Mail, Lock, AlertCircle, ArrowRight } from "lucide-react";
+import { Layers, Mail, Lock, AlertCircle, ArrowRight } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import Input from "../components/common/Input";
 import Button from "../components/common/Button";
+import ThemeToggle from "../components/common/ThemeToggle";
 
 export const Login: React.FC = () => {
   const { login, isLoading, error, clearError } = useAuth();
@@ -14,7 +15,6 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
 
-  // Navigate to previous location or dashboard after login
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || "/dashboard";
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -31,35 +31,35 @@ export const Login: React.FC = () => {
       await login({ email: email.trim(), password });
       navigate(from, { replace: true });
     } catch {
-      // Error is set in AuthContext
+      // Error is handled in AuthContext
     }
   };
 
   const displayedError = localError || error;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-canvas text-primary flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 transition-colors">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        <Link to="/" className="inline-flex items-center gap-2.5 group mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white shadow-xs group-hover:scale-105 transition-transform">
-            <Sparkles className="w-5 h-5" />
+        <Link to="/" className="inline-flex items-center gap-2.5 mb-3">
+          <div className="w-9 h-9 rounded-md bg-[#267653] dark:bg-[#42B883] text-white dark:text-[#121614] flex items-center justify-center font-bold text-sm shadow-xs">
+            <Layers className="w-4 h-4" />
           </div>
-          <span className="text-2xl font-bold tracking-tight text-slate-900">
+          <span className="text-xl font-bold tracking-wide uppercase text-primary">
             Cogniva
           </span>
         </Link>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-          Welcome back
+        <h2 className="text-lg font-bold text-primary tracking-tight">
+          Enterprise Tenant Authentication
         </h2>
-        <p className="mt-1 text-xs text-slate-500">
-          Sign in to access your enterprise knowledge workspace
+        <p className="mt-1 text-xs text-secondary">
+          Enter your authorized credentials to access your isolated knowledge pool
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-6 sm:px-10 border border-slate-200/90 rounded-2xl shadow-sm">
+      <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-surface py-7 px-6 sm:px-8 border border-border rounded-xl shadow-xs transition-colors">
           {displayedError && (
-            <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200/80 flex items-start gap-2.5 text-xs text-rose-700 animate-in fade-in duration-150">
+            <div className="mb-4 p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 flex items-start gap-2.5 text-xs text-rose-800 dark:text-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <span>{displayedError}</span>
             </div>
@@ -97,24 +97,28 @@ export const Login: React.FC = () => {
             <Button
               type="submit"
               variant="primary"
-              size="lg"
+              size="md"
               className="w-full mt-2"
               isLoading={isLoading}
               icon={<ArrowRight className="w-4 h-4" />}
             >
-              Sign In
+              Authenticate & Sign In
             </Button>
           </form>
 
-          <div className="mt-6 text-center text-xs text-slate-500 pt-6 border-t border-slate-100">
-            Don't have an account yet?{" "}
+          <div className="mt-5 text-center text-xs text-secondary pt-5 border-t border-border flex items-center justify-between">
+            <span>Don't have an account yet?</span>
             <Link
               to="/register"
-              className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors"
+              className="font-semibold text-accent hover:underline transition-colors"
             >
-              Create account
+              Register tenant →
             </Link>
           </div>
+        </div>
+
+        <div className="mt-4 flex justify-center">
+          <ThemeToggle compact />
         </div>
       </div>
     </div>

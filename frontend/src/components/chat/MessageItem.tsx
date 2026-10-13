@@ -1,5 +1,5 @@
-import React from "react";
-import { Sparkles, User as UserIcon } from "lucide-react";
+import React, { useState } from "react";
+import { Sparkles, User as UserIcon, Copy, Check } from "lucide-react";
 import CitationPill from "./CitationPill";
 import { CitationItem } from "../../types/chat";
 
@@ -26,36 +26,55 @@ export const MessageItem: React.FC<MessageProps> = ({
   onInspectCitation,
 }) => {
   const isUser = role === "user";
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
-    <div className={`flex gap-3.5 ${isUser ? "flex-row-reverse" : "flex-row"} mb-5`}>
+    <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"} mb-5 group`}>
       {/* Avatar */}
       <div
-        className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+        className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 text-xs font-semibold ${
           isUser
-            ? "bg-indigo-600 text-white shadow-xs"
-            : "bg-gradient-to-tr from-purple-600 to-indigo-600 text-white shadow-xs"
+            ? "bg-[#267653] dark:bg-[#42B883] text-white dark:text-[#121614]"
+            : "bg-panel border border-border text-primary"
         }`}
       >
-        {isUser ? <UserIcon className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+        {isUser ? <UserIcon className="w-3.5 h-3.5" /> : <Sparkles className="w-3.5 h-3.5 text-accent" />}
       </div>
 
       {/* Bubble container */}
-      <div className={`max-w-[82%] sm:max-w-[75%] ${isUser ? "text-right" : "text-left"}`}>
+      <div className={`max-w-[85%] sm:max-w-[80%] ${isUser ? "text-right" : "text-left"}`}>
         <div
-          className={`inline-block p-4 rounded-2xl text-sm leading-relaxed shadow-xs text-left ${
+          className={`relative inline-block p-4 rounded-xl text-xs sm:text-sm leading-relaxed text-left border ${
             isUser
-              ? "bg-indigo-600 text-white rounded-tr-xs"
-              : "bg-white border border-slate-200 text-slate-800 rounded-tl-xs"
+              ? "bg-panel border-border text-primary rounded-tr-xs"
+              : "bg-surface border-border text-primary rounded-tl-xs shadow-2xs"
           }`}
         >
-          <div className="whitespace-pre-wrap">{content}</div>
+          {/* Answer text */}
+          <div className="whitespace-pre-wrap leading-relaxed select-text">{content}</div>
 
-          {/* Sources / Citations section */}
+          {/* Copy button for assistant answers */}
+          {!isUser && (
+            <button
+              onClick={handleCopy}
+              className="absolute top-2.5 right-2.5 p-1 rounded text-secondary hover:text-primary hover:bg-panel transition-colors opacity-0 group-hover:opacity-100 cursor-pointer"
+              title="Copy message"
+            >
+              {copied ? <Check className="w-3.5 h-3.5 text-accent" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          )}
+
+          {/* Validated Citations section */}
           {!isUser && citations.length > 0 && (
-            <div className="mt-3.5 pt-3 border-t border-slate-100">
-              <p className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase mb-2">
-                Validated Citations & Sources
+            <div className="mt-3.5 pt-3 border-t border-border">
+              <p className="text-[10px] font-semibold tracking-wider text-secondary uppercase mb-2">
+                Validated Evidence & Citations
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {citations.map((c, i) => (
@@ -77,7 +96,7 @@ export const MessageItem: React.FC<MessageProps> = ({
         </div>
 
         {timestamp && (
-          <p className="text-[11px] text-slate-400 mt-1 px-1">{timestamp}</p>
+          <p className="text-[10px] text-secondary mt-1 px-1">{timestamp}</p>
         )}
       </div>
     </div>
