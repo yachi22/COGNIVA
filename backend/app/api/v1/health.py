@@ -114,5 +114,39 @@ async def run_db_migrations(db: AsyncSession = Depends(get_db)):
     except Exception as exc:
         status_report["table_check_error"] = str(exc)
 
+    # 4. Safe read-only inspection of ElderShield documents & evaluation chunks
+    try:
+        doc_res = await db.execute(text("SELECT id, filename, original_filename, status, user_id FROM documents WHERE original_filename ILIKE '%ElderShield%' OR filename ILIKE '%ElderShield%'"))
+        docs_data = []
+        for d in doc_res.fetchall():
+            doc_id, fn, ofn, st, uid = d
+            chunk_res = await db.execute(text(f"SELECT id, chunk_index, page_number, content FROM document_chunks WHERE document_id = '{doc_id}' ORDER BY chunk_index ASC"))
+            all_chunks = chunk_res.fetchall()
+            matching_chunks = []
+            for c in all_chunks:
+                cid, cidx, pnum, content = c
+                lower_c = content.lower()
+                if any(k in lower_c for k in ("evaluat", "precision", "recall", "assessed", "simple language", "representative")):
+                    matching_chunks.append({
+                        "id": str(cid),
+                        "chunk_index": cidx,
+                        "page_number": pnum,
+                        "content_snippet": content[:300],
+                        "has_evaluation_passage": "precision" in lower_c and "recall" in lower_c,
+                        "has_simple_language": "simple language" in lower_c,
+                    })
+            docs_data.append({
+                "document_id": str(doc_id),
+                "filename": fn,
+                "original_filename": ofn,
+                "status": st,
+                "user_id": str(uid),
+                "total_chunks": len(all_chunks),
+                "matching_chunks": matching_chunks,
+            })
+        status_report["eldershield_docs"] = docs_data
+    except Exception as exc:
+        status_report["eldershield_doc_error"] = str(exc)
+
     return status_report
 
