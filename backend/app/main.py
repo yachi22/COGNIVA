@@ -1,10 +1,41 @@
 import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from app.core.config import settings
 from app.api.v1 import api_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Lifespan context manager that ensures database migrations and all registered
+    tables exist safely on application startup without dropping existing data.
+    """
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_ini = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        if os.path.exists(alembic_ini):
+            alembic_cfg = Config(alembic_ini)
+            command.upgrade(alembic_cfg, "head")
+            print("Alembic upgrade head executed successfully.")
+    except Exception as exc:
+        print(f"Alembic auto-upgrade notice: {exc}")
+
+    try:
+        from app.core.database import Base, async_engine
+        import app.models  # noqa: F401
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("Base.metadata.create_all verified.")
+    except Exception as exc:
+        print(f"Base.metadata.create_all notice: {exc}")
+
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -13,6 +44,7 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs" if settings.DEBUG else None,
     redoc_url=f"{settings.API_V1_STR}/redoc" if settings.DEBUG else None,
+    lifespan=lifespan,
 )
 
 # Configure CORS safely for frontend access

@@ -72,3 +72,47 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
     if detail:
         response["detail"] = detail
     return response
+
+
+@router.post("/health/migrate", tags=["health"])
+async def run_db_migrations(db: AsyncSession = Depends(get_db)):
+    """
+    Ensures Alembic migrations and required schema tables are up to date.
+    Safe and idempotent.
+    """
+    import os
+    status_report = {}
+
+    # 1. Alembic upgrade head
+    try:
+        from alembic.config import Config
+        from alembic import command
+        alembic_ini = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "alembic.ini"))
+        if os.path.exists(alembic_ini):
+            alembic_cfg = Config(alembic_ini)
+            command.upgrade(alembic_cfg, "head")
+            status_report["alembic"] = "success"
+        else:
+            status_report["alembic"] = f"ini_not_found at {alembic_ini}"
+    except Exception as exc:
+        status_report["alembic_error"] = str(exc)
+
+    # 2. Base.metadata.create_all fallback
+    try:
+        from app.core.database import Base, async_engine
+        import app.models  # noqa: F401
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        status_report["create_all"] = "success"
+    except Exception as exc:
+        status_report["create_all_error"] = str(exc)
+
+    # 3. Check existing tables in public schema
+    try:
+        res = await db.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"))
+        status_report["tables"] = [row[0] for row in res.fetchall()]
+    except Exception as exc:
+        status_report["table_check_error"] = str(exc)
+
+    return status_report
+
