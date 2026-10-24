@@ -148,5 +148,51 @@ async def run_db_migrations(db: AsyncSession = Depends(get_db)):
     except Exception as exc:
         status_report["eldershield_doc_error"] = str(exc)
 
+    # 5. Trace the exact user question on ElderShield AI document
+    try:
+        import uuid
+        user_id_uuid = uuid.UUID("a12526df-80ce-49c6-8901-1bd366129687")
+        doc_id_uuid = uuid.UUID("fe9e84bd-c3dd-49fd-b9a7-334ac74ee74c")
+        test_query = "List every evaluation metric and evaluation method explicitly mentioned in the ElderShield AI document. Do not add anything that is not stated in the document."
+
+        # A. Semantic/Hybrid Retrieval trace
+        from app.services.retrieval_service import retrieval_service
+        search_res = await retrieval_service.search(
+            db=db,
+            user_id=user_id_uuid,
+            query=test_query,
+            top_k=5,
+            document_id=doc_id_uuid,
+            hybrid=True,
+        )
+
+        # B. RAG answer trace
+        from app.services.rag.service import rag_service
+        rag_res = await rag_service.answer_query(
+            db=db,
+            user_id=user_id_uuid,
+            query=test_query,
+            top_k=5,
+            document_id=doc_id_uuid,
+        )
+
+        status_report["trace"] = {
+            "retrieved_total": search_res.total,
+            "retrieved_chunks": [
+                {
+                    "chunk_id": str(r.chunk_id),
+                    "chunk_index": r.chunk_index,
+                    "similarity_score": r.similarity_score,
+                    "cosine_distance": r.cosine_distance,
+                    "content_snippet": r.content[:200],
+                }
+                for r in search_res.results
+            ],
+            "rag_answer": rag_res.answer,
+            "rag_citations": [c.model_dump(mode="json") for c in rag_res.citations],
+        }
+    except Exception as exc:
+        status_report["trace_error"] = str(exc)
+
     return status_report
 
