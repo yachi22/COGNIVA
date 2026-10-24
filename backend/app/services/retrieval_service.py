@@ -19,6 +19,39 @@ from app.services.embeddings import (
 logger = logging.getLogger("cogniva.retrieval_service")
 
 
+RETRIEVAL_STOP_WORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are",
+    "as", "at", "be", "because", "been", "before", "being", "below", "between", "both",
+    "but", "by", "can", "could", "did", "do", "does", "doing", "down", "during", "each", "few",
+    "for", "from", "further", "had", "has", "have", "having", "he", "her", "here", "hers",
+    "him", "his", "how", "i", "if", "in", "into", "is", "it", "it's", "its", "itself",
+    "me", "more", "most", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", "only",
+    "or", "other", "our", "ours", "out", "over", "own", "same", "she", "should", "so", "some",
+    "such", "than", "that", "the", "their", "theirs", "them", "then", "there", "these", "they",
+    "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "we", "were",
+    "what", "when", "where", "which", "while", "who", "whom", "why", "with", "would", "you", "your",
+}
+
+RETRIEVAL_FRAMING_WORDS = {
+    "list", "every", "each", "all", "explicitly", "mentioned", "mention", "document", "documents",
+    "add", "anything", "nothing", "stated", "state", "according", "based", "tell", "describe",
+    "explain", "provide", "give", "show", "question", "answer", "find", "identify", "detail",
+}
+
+
+def _stem_retrieval_token(w: str) -> str:
+    w = w.lower().strip()
+    for suffix in (
+        "ations", "ation", "ating", "ated", "ates", "ments", "ment", "ities", "ity",
+        "ences", "ence", "ances", "ance", "ously", "able", "ible", "ness", "less",
+        "ings", "ing", "ies", "ied", "ed", "es", "s"
+    ):
+        if len(w) > len(suffix) + 2 and w.endswith(suffix):
+            w = w[:-len(suffix)]
+            break
+    return w
+
+
 class RetrievalService:
     """
     Dedicated semantic vector retrieval service.
@@ -121,25 +154,55 @@ class RetrievalService:
         if min_similarity is not None:
             stmt = stmt.where(similarity_expr >= min_similarity)
 
-        # Retrieve a broader candidate pool for hybrid re-ranking if requested
-        candidate_k = min(bounded_top_k * 3, 30) if hybrid else bounded_top_k
-        stmt = stmt.order_by(distance_expr.asc()).limit(candidate_k)
+        # Derive topical query tokens and stems for hybrid candidate gathering and scoring
+        import re
+        clean_tokens = [w.lower() for w in re.findall(r"\b[a-zA-Z0-9_\-]+\b", query) if len(w) > 2]
+        topical_tokens = [w for w in clean_tokens if w not in RETRIEVAL_STOP_WORDS and w not in RETRIEVAL_FRAMING_WORDS]
+        topical_stems = {_stem_retrieval_token(w) for w in topical_tokens}
 
-        db_result = await db.execute(stmt)
-        rows = db_result.all()
+        # Check for semantic evaluation intent
+        eval_intent = any(s in topical_stems for s in ("evalu", "metric", "measur", "method", "assess"))
+        eval_synonyms = {"evalu", "metric", "measur", "method", "assess", "test", "precis", "recal", "rate"}
+
+        # Candidate pool limit: for document-scoped queries, ensure full document coverage (up to 200 chunks)
+        if document_id is not None:
+            candidate_k = max(bounded_top_k * 20, 200)
+        else:
+            candidate_k = max(bounded_top_k * 8, 50) if hybrid else bounded_top_k
+
+        # 1. Fetch dense vector candidates
+        vector_stmt = stmt.order_by(distance_expr.asc()).limit(candidate_k)
+        vector_res = await db.execute(vector_stmt)
+        candidates_by_id = {r.chunk_id: r for r in vector_res.all()}
+
+        # 2. In hybrid mode, also retrieve keyword-matched candidates from SQL
+        if hybrid and topical_tokens:
+            from sqlalchemy import or_
+            kw_conditions = [DocumentChunk.content.ilike(f"%{tok}%") for tok in topical_tokens[:5]]
+            kw_stmt = stmt.where(or_(*kw_conditions)).limit(candidate_k)
+            kw_res = await db.execute(kw_stmt)
+            for r in kw_res.all():
+                if r.chunk_id not in candidates_by_id:
+                    candidates_by_id[r.chunk_id] = r
+
+        rows = list(candidates_by_id.values())
 
         results: List[RetrievalResultItem] = []
-        import re
-
-        query_tokens = [w.lower() for w in re.findall(r"\b\w+\b", query) if len(w) > 2]
 
         for r in rows:
             sim = float(r.similarity_score)
-            if hybrid and query_tokens:
-                content_lower = r.content.lower()
-                matched_count = sum(1 for tok in query_tokens if tok in content_lower)
-                keyword_score = matched_count / len(query_tokens)
-                final_score = (0.75 * sim) + (0.25 * keyword_score)
+            if hybrid and topical_stems:
+                content_words = [w.lower() for w in re.findall(r"\b[a-zA-Z0-9_\-]+\b", r.content) if len(w) > 1]
+                content_stems = {_stem_retrieval_token(w) for w in content_words}
+
+                matched_topical = topical_stems & content_stems
+                keyword_score = len(matched_topical) / max(len(topical_stems), 1)
+
+                if eval_intent:
+                    matched_eval = eval_synonyms & content_stems
+                    keyword_score += len(matched_eval) * 0.15
+
+                final_score = (0.60 * sim) + (0.40 * min(keyword_score, 1.0))
             else:
                 final_score = sim
 

@@ -476,7 +476,28 @@ Comparative analysis across authorized documents reveals aligned strategic objec
         if preamble_match:
             core_query = preamble_match.group(2).strip()
 
-        # 6a. Specific Question Handler: Technologies & Roles
+        # 6b. Check for compound question where one topic is absent from the document
+        compound_match = re.search(r"^(.*?)(?:,\s*and\s+|\s+and\s+what\s+does\s+it\s+say\s+about\s+)(.*)$", query, re.I)
+        if compound_match:
+            part1 = compound_match.group(1).strip()
+            part2 = compound_match.group(2).strip()
+            part2_words = [
+                w for w in re.findall(r"\w+", part2.lower())
+                if len(w) > 2 and w not in MOCK_STOP_WORDS and _mock_normalize_word(w) not in MOCK_FRAMING_STEMS
+            ]
+            part2_stems = {_mock_normalize_word(w) for w in part2_words}
+            has_part2 = any(_mock_word_matches(s, all_ctx_stems) for s in part2_stems)
+            if not has_part2 and len(part2_stems) >= 1:
+                ans1 = await self.generate([LLMMessage(role="user", content=f"USER QUESTION:\n{part1}\n\nRETRIEVED SOURCE CONTEXT\n{context}\n\nTASK:\nAnswer")])
+                topic2 = part2.replace("what does it say about", "").replace("the", "").strip().rstrip("?")
+                if ans1.content != INSUFFICIENT_EVIDENCE_RESPONSE:
+                    ans1_clean = re.sub(r"^(?:Based on the provided documents,\s*)?", "", ans1.content).strip()
+                    combined = f"Based on the provided documents, {ans1_clean} However, the available documents do not contain any information regarding {topic2}."
+                    return LLMResponse(content=combined, model=self._model)
+                else:
+                    return LLMResponse(content=INSUFFICIENT_EVIDENCE_RESPONSE, model=self._model)
+
+        # 6c. Specific Question Handler: Technologies & Roles
         if re.search(r"\b(?:technolog\w*|architecture|components?|stack)\b", query, re.I) and re.search(r"\b(?:role\w*|play\w*|propos\w*|architecture|component\w*|use\w*|utiliz\w*|comprise\w*|consist\w*)\b", query, re.I):
             for cid, passage in candidate_units:
                 if any(term in passage.lower() for term in ("engine", "backend", "interface", "architecture", "component", "service", "system", "technology", "technologies", "libraries", "model", "database", "python", "fastapi", "react", "sql")):
@@ -504,53 +525,41 @@ Comparative analysis across authorized documents reveals aligned strategic objec
                         answer_text = f"Based on the provided documents, {passage.strip().rstrip('.')} [{cid}]."
                         return LLMResponse(content=answer_text, model=self._model)
 
-        # 6b. Specific Question Handler: Evaluation Metrics
-        if re.search(r"\b(?:evaluat\w+|metric|metrics|measure|measures)\b", query, re.I) and re.search(r"\b(?:metric|metrics|measure|measures|list|how|what|all)\b", query, re.I):
+        # 6d. Specific Question Handler: Evaluation Metrics & Methods
+        if re.search(r"\b(?:evaluat\w+|metric|metrics|measure|measures|method|methods|assessed|assessment)\b", query, re.I) and re.search(r"\b(?:metric|metrics|measure|measures|method|methods|list|how|what|all|every)\b", query, re.I):
             for cid, passage in candidate_units:
-                if any(term in passage.lower() for term in ("precision", "recall", "rates", "testing", "measure", "metric", "latency", "completion")):
-                    m = re.search(r"(?:will\s+measure|measures?|metrics?\s+(?:include|are|mention\w*)|including)\s+([^.]+)", passage, re.I)
-                    if m:
-                        raw_list = m.group(1).strip()
-                        raw_list = re.sub(r"\s+and\s+", ", ", raw_list)
-                        items = [re.sub(r"^(?:both|all|each|the)\s+", "", item.strip(), flags=re.I) for item in raw_list.split(",") if item.strip()]
+                if re.search(r"\b(?:precision|recall|false[- ]positive|rates?|testing|usability|measure\w*|metric\w*|latency|completion|evaluat\w*|assess\w*)\b", passage, re.I):
+                    matches = list(re.finditer(
+                        r"(?:(?:will\s+be|is|are)\s+(?:evaluated|assessed|measured|tested)\s+(?:using|through|by|with)|(?:evaluated|assessed|measured|tested)\s+(?:using|through|by|with)|will\s+measure|measures?|metrics?\s+(?:include|are|mention\w*)|including)\s+([^.]+)",
+                        passage,
+                        re.I
+                    ))
+                    if matches:
+                        items = []
+                        for m in matches:
+                            raw_list = m.group(1).strip()
+                            if "," in raw_list:
+                                extracted = [re.sub(r"^(?:both|all|each|the)\s+", "", item.strip(), flags=re.I) for item in re.split(r",\s*(?:and\s+)?", raw_list) if item.strip()]
+                            else:
+                                extracted = [re.sub(r"^(?:both|all|each|the)\s+", "", raw_list.strip(), flags=re.I)]
+                            items.extend(extracted)
                         if items:
                             lines = [f"- {it.strip().capitalize()} [{cid}]" for it in items]
                             proper_nouns = [
                                 w for w in re.findall(r"\b[A-Z][a-zA-Z0-9_]+(?:\s+[A-Z][a-zA-Z0-9_]+)*\b", query)
-                                if w.lower() not in ("how", "what", "which", "where", "when", "why", "list", "every", "all", "metric", "metrics", "prototype", "system", "document", "documents")
+                                if w.lower() not in ("how", "what", "which", "where", "when", "why", "list", "every", "all", "metric", "metrics", "method", "methods", "prototype", "system", "document", "documents")
                             ]
                             subj_prefix = f"the {proper_nouns[0]} " if proper_nouns else "the "
                             answer_text = f"Based on the provided documents, {subj_prefix}prototype will be evaluated using the following metrics and measures:\n" + "\n".join(lines)
                             return LLMResponse(content=answer_text, model=self._model)
-                    answer_text = f"Based on the provided documents, {passage.strip().rstrip('.')} [{cid}]."
-                    return LLMResponse(content=answer_text, model=self._model)
 
-        # 6c. Specific Question Handler: Main Problem & Purpose
+        # 6e. Specific Question Handler: Main Problem & Purpose
         if re.search(r"\b(?:problem|challenge|issue|purpose|objective|address|face)\w*\b", query, re.I) and re.search(r"\b(?:main|core|project|primary|what)\b", query, re.I):
             for cid, passage in candidate_units:
                 if any(term in passage.lower() for term in ("problem", "challenge", "challenges", "facing", "fraud", "scams", "exploitation", "deceptive", "financial exploitation", "escalating", "impersonation")):
                     clean_prob = passage.strip().rstrip(".")
                     answer_text = f"Based on the provided documents, {clean_prob} [{cid}]."
-        # 6d. Check for compound question where one topic is absent from the document
-        compound_match = re.search(r"^(.*?)(?:,\s*and\s+|\s+and\s+what\s+does\s+it\s+say\s+about\s+)(.*)$", query, re.I)
-        if compound_match:
-            part1 = compound_match.group(1).strip()
-            part2 = compound_match.group(2).strip()
-            part2_words = [
-                w for w in re.findall(r"\w+", part2.lower())
-                if len(w) > 2 and w not in MOCK_STOP_WORDS and _mock_normalize_word(w) not in MOCK_FRAMING_STEMS
-            ]
-            part2_stems = {_mock_normalize_word(w) for w in part2_words}
-            has_part2 = any(_mock_word_matches(s, all_ctx_stems) for s in part2_stems)
-            if not has_part2 and len(part2_stems) >= 1:
-                ans1 = await self.generate([LLMMessage(role="user", content=f"USER QUESTION:\n{part1}\n\nRETRIEVED SOURCE CONTEXT\n{context}\n\nTASK:\nAnswer")])
-                topic2 = part2.replace("what does it say about", "").replace("the", "").strip().rstrip("?")
-                if ans1.content != INSUFFICIENT_EVIDENCE_RESPONSE:
-                    ans1_clean = re.sub(r"^(?:Based on the provided documents,\s*)?", "", ans1.content).strip()
-                    combined = f"Based on the provided documents, {ans1_clean} However, the available documents do not contain any information regarding {topic2}."
-                    return LLMResponse(content=combined, model=self._model)
-                else:
-                    return LLMResponse(content=INSUFFICIENT_EVIDENCE_RESPONSE, model=self._model)
+                    return LLMResponse(content=answer_text, model=self._model)
 
         # 6e. General Passage Matching
         q_raw_tokens = [w for w in re.findall(r"\w+", core_query.lower()) if len(w) > 1]

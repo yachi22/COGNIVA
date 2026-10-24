@@ -521,3 +521,152 @@ async def test_eldershield_ai_grounded_qa():
     assert "do not contain enough information" in ans4.lower()
 
 
+# 15. Critical Regression: Unit #37 Evaluation Metrics & Methods Extraction
+@pytest.mark.asyncio
+async def test_eldershield_actual_passage_evaluation_metrics_and_methods():
+    from app.services.llm.client import MockLLMProvider
+    from app.services.llm.prompt import build_rag_messages
+    from app.services.rag.citations import citation_validator
+    from app.schemas.retrieval import RetrievalResultItem
+
+    provider = MockLLMProvider()
+    actual_source_passage = (
+        "The prototype will be evaluated using representative legitimate and suspicious examples. "
+        "Performance will be assessed using precision, recall, false-positive rates, and usability testing."
+    )
+    evidence = (
+        f"[S1]\n"
+        f"Document: ElderShield AI.docx\n"
+        f"Page: N/A\n"
+        f"Chunk: 36\n"
+        f"Content:\n"
+        f"{actual_source_passage}\n"
+    )
+
+    query = (
+        "List every evaluation metric and evaluation method explicitly mentioned in the ElderShield AI document. "
+        "Do not add anything that is not stated in the document."
+    )
+    messages = build_rag_messages(query=query, context_text=evidence)
+    resp = await provider.generate(messages=messages)
+    ans = resp.content.lower()
+
+    # Assert all four metrics/methods and the representative examples method are extracted
+    assert "precision" in ans
+    assert "recall" in ans
+    assert "false-positive rates" in ans or "false-positive" in ans
+    assert "usability testing" in ans
+    assert "representative legitimate and suspicious examples" in ans
+    assert "[s1]" in ans
+
+    # Verify citation mapping
+    mock_retrieval_item = RetrievalResultItem(
+        chunk_id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        chunk_index=36,
+        content=actual_source_passage,
+        similarity_score=0.92,
+        cosine_distance=0.08,
+        page_number=None,
+        metadata={"unit_type": "paragraph"},
+        document_filename="ElderShield AI.docx",
+        document_original_filename="ElderShield AI.docx",
+    )
+    validated = citation_validator.extract_and_validate(answer=resp.content, sources=[mock_retrieval_item])
+    assert len(validated) == 1
+    assert validated[0].citation_id == "S1"
+    assert validated[0].chunk_index == 36
+    assert validated[0].document_filename == "ElderShield AI.docx"
+
+
+# 16. Technologies & Roles Extraction Test
+@pytest.mark.asyncio
+async def test_eldershield_technologies_and_roles_grounded():
+    from app.services.llm.client import MockLLMProvider
+    from app.services.llm.prompt import build_rag_messages
+
+    provider = MockLLMProvider()
+    evidence = (
+        "[S1]\n"
+        "Document: ElderShield AI.docx\n"
+        "Content:\n"
+        "The proposed system architecture comprises a Python FastAPI backend providing real-time linguistic risk scoring, "
+        "a React user interface tailored for high-contrast accessibility, and an NLP syntactic analysis engine running local inference to detect coercion patterns.\n"
+    )
+
+    query = "What technologies are proposed for the prototype and what roles do they play?"
+    resp = await provider.generate(messages=build_rag_messages(query=query, context_text=evidence))
+    ans = resp.content
+
+    assert "FastAPI" in ans
+    assert "React" in ans
+    assert "NLP" in ans or "syntactic analysis" in ans.lower()
+    assert "[S1]" in ans
+
+
+# 17. Multi-Part Query (Present topic + Absent topic) Test
+@pytest.mark.asyncio
+async def test_eldershield_multipart_query_partial_refusal():
+    from app.services.llm.client import MockLLMProvider
+    from app.services.llm.prompt import build_rag_messages
+
+    provider = MockLLMProvider()
+    evidence = (
+        "[S1]\n"
+        "Document: ElderShield AI.docx\n"
+        "Content:\n"
+        "The proposed system architecture comprises a Python FastAPI backend providing real-time linguistic risk scoring, "
+        "a React user interface tailored for high-contrast accessibility, and an NLP syntactic analysis engine running local inference to detect coercion patterns.\n"
+    )
+
+    query = "What technologies are used in the system, and what does it say about 401k retirement benefits?"
+    resp = await provider.generate(messages=build_rag_messages(query=query, context_text=evidence))
+    ans = resp.content.lower()
+
+    # Must answer about technologies
+    assert "fastapi" in ans
+    assert "react" in ans
+    # Must honestly report missing evidence for the unmentioned topic
+    assert "do not contain any information regarding 401k" in ans or "do not contain enough information" in ans
+
+
+# 18. Completely Unrelated Query Honest Refusal Test
+@pytest.mark.asyncio
+async def test_eldershield_unrelated_query_honest_refusal():
+    from app.services.llm.client import MockLLMProvider
+    from app.services.llm.prompt import build_rag_messages, INSUFFICIENT_EVIDENCE_RESPONSE
+    from app.services.rag.citations import citation_validator
+    from app.schemas.retrieval import RetrievalResultItem
+
+    provider = MockLLMProvider()
+    evidence = (
+        "[S1]\n"
+        "Document: ElderShield AI.docx\n"
+        "Content:\n"
+        "The prototype will be evaluated using representative legitimate and suspicious examples. "
+        "Performance will be assessed using precision, recall, false-positive rates, and usability testing.\n"
+    )
+
+    query = "What is the recommended dog food brand and veterinary schedule according to the document?"
+    resp = await provider.generate(messages=build_rag_messages(query=query, context_text=evidence))
+
+    assert resp.content == INSUFFICIENT_EVIDENCE_RESPONSE
+
+    # Assert no citations are fabricated
+    mock_item = RetrievalResultItem(
+        chunk_id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        chunk_index=36,
+        content=evidence,
+        similarity_score=0.1,
+        cosine_distance=0.9,
+        page_number=None,
+        metadata={},
+        document_filename="ElderShield AI.docx",
+        document_original_filename="ElderShield AI.docx",
+    )
+    validated = citation_validator.extract_and_validate(answer=resp.content, sources=[mock_item])
+    assert len(validated) == 0
+
+
+
