@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import ChatBox from "../components/chat/ChatBox";
 import ConversationSidebar from "../components/chat/ConversationSidebar";
 import { MessageProps, MessageCitation } from "../components/chat/MessageItem";
@@ -9,11 +9,16 @@ import {
   deleteConversation,
   queryRAG,
 } from "../services/chatService";
+import { researchService } from "../services/researchService";
 import { ConversationResponse, ConversationDetailResponse } from "../types/chat";
 
 export const ChatPage: React.FC = () => {
   const { conversationId } = useParams<{ conversationId?: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+
+  const initialQuery = searchParams.get("query");
+  const initialDocId = searchParams.get("docId");
 
   const [conversations, setConversations] = useState<ConversationResponse[]>([]);
   const [loadingConversations, setLoadingConversations] = useState<boolean>(true);
@@ -66,22 +71,7 @@ export const ChatPage: React.FC = () => {
                 page: c.page_number,
                 rawCitation: c,
               }))
-            : (m.metadata?.sources || []).map((s: any) => ({
-                citationId: s.citation_id,
-                sourceName: s.document_filename,
-                page: s.page_number,
-                rawCitation: {
-                  citation_id: s.citation_id,
-                  document_id: s.document_id,
-                  document_filename: s.document_filename,
-                  chunk_id: s.chunk_id,
-                  chunk_index: s.chunk_index,
-                  page_number: s.page_number,
-                  similarity_score: s.similarity_score,
-                  cosine_distance: s.cosine_distance,
-                  metadata: s.metadata,
-                },
-              }));
+            : [];
 
           return {
             role: m.role as "user" | "assistant" | "system",
@@ -123,7 +113,7 @@ export const ChatPage: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (query: string, isDeepResearch?: boolean) => {
+  const handleSendMessage = async (query: string, isDeepResearch?: boolean, documentId?: string | null) => {
     setError(null);
     const userTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const userMessage: MessageProps = {
@@ -137,8 +127,10 @@ export const ChatPage: React.FC = () => {
 
     try {
       if (isDeepResearch) {
-        const { researchService } = await import("../services/researchService");
-        const res = await researchService.executeDeepResearch({ topic: query });
+        const res = await researchService.executeDeepResearch({
+          topic: query,
+          document_id: documentId || undefined,
+        });
         const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
         const citations: MessageCitation[] = (res.sources || []).map((s, idx) => ({
@@ -178,34 +170,20 @@ export const ChatPage: React.FC = () => {
       } else {
         const response = await queryRAG({
           query,
+          document_id: documentId || null,
           conversation_id: activeConversation?.id || conversationId || null,
         });
 
         const assistantTimestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-        const citations: MessageCitation[] = (response.citations && response.citations.length > 0)
+        const citations: MessageCitation[] = (response.citations && response.citations.length > 0 && !response.insufficient_evidence)
           ? response.citations.map((c) => ({
               citationId: c.citation_id,
               sourceName: c.document_filename,
               page: c.page_number,
               rawCitation: c,
             }))
-          : (response.sources || []).map((s) => ({
-              citationId: s.citation_id,
-              sourceName: s.document_filename,
-              page: s.page_number,
-              rawCitation: {
-                citation_id: s.citation_id,
-                document_id: s.document_id,
-                document_filename: s.document_filename,
-                chunk_id: s.chunk_id,
-                chunk_index: s.chunk_index,
-                page_number: s.page_number,
-                similarity_score: s.similarity_score,
-                cosine_distance: s.cosine_distance,
-                metadata: s.metadata,
-              },
-            }));
+          : [];
 
         const assistantMessage: MessageProps = {
           role: "assistant",
@@ -235,7 +213,7 @@ export const ChatPage: React.FC = () => {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8.5rem)] bg-surface border border-border rounded-xl overflow-hidden transition-colors">
+    <div className="flex h-[calc(100vh-8.5rem)] bg-surface border border-border rounded-xl overflow-hidden transition-colors shadow-2xs">
       {/* Conversation History Sidebar */}
       <ConversationSidebar
         conversations={conversations}
@@ -259,6 +237,8 @@ export const ChatPage: React.FC = () => {
           error={error}
           onToggleSidebar={() => setSidebarOpen(true)}
           showSidebarToggle={true}
+          initialDocumentId={initialDocId}
+          initialQuery={initialQuery}
         />
       </div>
     </div>

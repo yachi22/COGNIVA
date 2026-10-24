@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useParams } from "react-router-dom";
 import { Files, Folder, FileText } from "lucide-react";
 import DocumentTable from "../components/documents/DocumentTable";
 import UploadDropzone from "../components/documents/UploadDropzone";
@@ -8,6 +9,7 @@ import Button from "../components/common/Button";
 import useDocuments from "../hooks/useDocuments";
 
 export const DocumentsPage: React.FC = () => {
+  const { documentId } = useParams<{ documentId?: string }>();
   const {
     documents,
     isLoading,
@@ -83,6 +85,7 @@ export const DocumentsPage: React.FC = () => {
         onProcess={processDoc}
         onViewExtracted={getExtracted}
         onDelete={deleteDoc}
+        initialViewerDocId={documentId}
       />
 
       {/* Standalone Modals */}

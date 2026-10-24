@@ -8,8 +8,11 @@ import {
 
 export const collectionService = {
   async getCollections(): Promise<CollectionListResponse> {
-    const response = await apiClient.get<CollectionListResponse>("/collections");
-    return response.data;
+    const response = await apiClient.get<any>("/collections");
+    if (Array.isArray(response.data)) {
+      return { items: response.data, total: response.data.length };
+    }
+    return response.data || { items: [], total: 0 };
   },
 
   async getCollection(id: string): Promise<CollectionItem> {

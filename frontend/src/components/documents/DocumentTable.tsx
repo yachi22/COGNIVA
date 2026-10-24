@@ -19,6 +19,7 @@ import {
   Table,
   GitCompare,
   FolderPlus,
+  BookOpen,
 } from "lucide-react";
 import Button from "../common/Button";
 import EmptyState from "../common/EmptyState";
@@ -29,6 +30,7 @@ import StructuredExtractModal from "./StructuredExtractModal";
 import ComparisonModal from "./ComparisonModal";
 import ReportModal from "./ReportModal";
 import CollectionModal from "./CollectionModal";
+import DocumentViewerModal from "./DocumentViewerModal";
 
 interface DocumentTableProps {
   documents: DocumentItem[];
@@ -38,6 +40,7 @@ interface DocumentTableProps {
   onProcess?: (id: string) => Promise<unknown>;
   onViewExtracted?: (id: string) => Promise<ExtractedDocument | null>;
   onUploadClick?: () => void;
+  initialViewerDocId?: string | null;
 }
 
 export const DocumentTable: React.FC<DocumentTableProps> = ({
@@ -48,6 +51,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   onProcess,
   onViewExtracted,
   onUploadClick,
+  initialViewerDocId,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -57,11 +61,22 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
 
   // Modals state
+  const [viewerDoc, setViewerDoc] = useState<DocumentItem | null>(null);
   const [summarizeDoc, setSummarizeDoc] = useState<DocumentItem | null>(null);
   const [extractDoc, setExtractDoc] = useState<DocumentItem | null>(null);
   const [isComparing, setIsComparing] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [collectionDocId, setCollectionDocId] = useState<string | null>(null);
+
+  // Sync initial viewer doc if passed from route or parent
+  React.useEffect(() => {
+    if (initialViewerDocId && documents.length > 0) {
+      const match = documents.find((d) => d.id === initialViewerDocId);
+      if (match) {
+        setViewerDoc(match);
+      }
+    }
+  }, [initialViewerDocId, documents]);
 
   // Modal inspection state for extracted text
   const [inspectDoc, setInspectDoc] = useState<DocumentItem | null>(null);
@@ -347,9 +362,14 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                           <FileText className="w-3.5 h-3.5" />
                         </div>
                         <div className="truncate">
-                          <p className="text-xs font-medium text-primary truncate">
+                          <button
+                            type="button"
+                            onClick={() => setViewerDoc(doc)}
+                            className="text-xs font-semibold text-primary hover:text-accent truncate block text-left transition-colors cursor-pointer"
+                            title="Open Document Viewer (Insights, Takeaways, Citations & Questions)"
+                          >
                             {doc.original_filename || doc.filename}
-                          </p>
+                          </button>
                           <p className="text-[10px] text-secondary font-mono truncate">
                             UUID: {doc.id.slice(0, 8)}...
                           </p>
@@ -418,6 +438,16 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                             <span>{doc.status === "failed" ? "Retry" : "Process"}</span>
                           </button>
                         )}
+
+                        {/* Document Viewer action */}
+                        <button
+                          type="button"
+                          onClick={() => setViewerDoc(doc)}
+                          className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-accent transition-colors cursor-pointer"
+                          title="Open Document Viewer (Insights, Takeaways, Citations & Questions)"
+                        >
+                          <BookOpen className="w-3.5 h-3.5" />
+                        </button>
 
                         {/* Intelligence Actions (Summary, Extract, Collection) */}
                         {doc.status === "processed" && (
@@ -597,6 +627,15 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Standalone Document Viewer */}
+      {viewerDoc && (
+        <DocumentViewerModal
+          document={viewerDoc}
+          onClose={() => setViewerDoc(null)}
+          onProcess={onProcess}
+        />
       )}
 
       {/* Intelligence Modals */}

@@ -192,6 +192,86 @@ class DOCXExtractor:
         )
 
 
+class CSVExtractor:
+    """
+    High-fidelity tabular CSV extractor.
+    Preserves column headers and groups rows into searchable structural table units.
+    """
+
+    def extract(self, file_path: Path, document_id: uuid.UUID) -> ExtractedDocument:
+        import csv
+
+        units: List[ExtractedUnit] = []
+        try:
+            with open(file_path, mode="r", encoding="utf-8", errors="replace") as f:
+                reader = csv.reader(f)
+                rows = list(reader)
+
+            if not rows:
+                raise ExtractionError("CSV document is empty.")
+
+            headers = [h.strip() for h in rows[0]]
+            data_rows = rows[1:]
+
+            if not data_rows:
+                # Only header row
+                header_line = " | ".join(headers)
+                units.append(
+                    ExtractedUnit(
+                        unit_type="table_header",
+                        page_number=None,
+                        sequence_number=1,
+                        text=f"Columns: {header_line}",
+                        metadata={"headers": headers, "total_rows": 0},
+                    )
+                )
+            else:
+                # Group data rows in chunks of ~20 rows for coherent semantic units
+                batch_size = 20
+                for batch_idx in range(0, len(data_rows), batch_size):
+                    batch = data_rows[batch_idx : batch_idx + batch_size]
+                    lines = [" | ".join(headers)]
+                    for r in batch:
+                        # Clean and format row
+                        clean_row = [clean_extracted_text(cell) for cell in r]
+                        lines.append(" | ".join(clean_row))
+
+                    unit_text = "\n".join(lines)
+                    units.append(
+                        ExtractedUnit(
+                            unit_type="table",
+                            page_number=None,
+                            sequence_number=len(units) + 1,
+                            text=unit_text,
+                            metadata={
+                                "headers": headers,
+                                "start_row": batch_idx + 1,
+                                "end_row": min(batch_idx + batch_size, len(data_rows)),
+                                "total_rows": len(data_rows),
+                                "word_count": len(unit_text.split()),
+                            },
+                        )
+                    )
+
+        except Exception as e:
+            raise ExtractionError(f"Failed to parse CSV document: {str(e)}")
+
+        full_text = "\n\n".join(u.text for u in units)
+        total_chars = len(full_text)
+        total_words = len(full_text.split()) if full_text else 0
+
+        return ExtractedDocument(
+            document_id=document_id,
+            file_type="csv",
+            units=units,
+            total_pages=None,
+            total_units=len(units),
+            total_characters=total_chars,
+            total_words=total_words,
+            full_text=full_text,
+        )
+
+
 class DocumentExtractor:
     """
     Unified extraction facade routing by file type.
@@ -200,6 +280,7 @@ class DocumentExtractor:
     def __init__(self):
         self.pdf_extractor = PDFExtractor()
         self.docx_extractor = DOCXExtractor()
+        self.csv_extractor = CSVExtractor()
 
     def extract(self, file_path: Path, file_type: str, document_id: uuid.UUID) -> ExtractedDocument:
         norm_type = file_type.lower().strip()
@@ -207,9 +288,12 @@ class DocumentExtractor:
             return self.pdf_extractor.extract(file_path=file_path, document_id=document_id)
         elif norm_type == "docx":
             return self.docx_extractor.extract(file_path=file_path, document_id=document_id)
+        elif norm_type == "csv":
+            return self.csv_extractor.extract(file_path=file_path, document_id=document_id)
         else:
             raise ExtractionError(f"Unsupported file type for extraction: {file_type}")
 
 
 # Singleton instance
 document_extractor = DocumentExtractor()
+

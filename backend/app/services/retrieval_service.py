@@ -34,13 +34,15 @@ class RetrievalService:
         top_k: int = 5,
         document_id: Optional[uuid.UUID] = None,
         min_similarity: Optional[float] = None,
+        hybrid: bool = False,
     ) -> RetrievalResponse:
         """
-        Executes semantic similarity search:
+        Executes semantic similarity search (with optional hybrid keyword re-ranking):
         1. Validates document ownership if document_id is specified.
         2. Generates query vector embedding (1536-dim).
         3. Executes pgvector cosine similarity search (<=>) directly in PostgreSQL.
-        4. Returns top-K ranked RetrievalResultItem objects with complete provenance.
+        4. When hybrid=True, applies reciprocal keyword overlap weighting.
+        5. Returns top-K ranked RetrievalResultItem objects with complete provenance.
         """
         # Bound top_k safely
         bounded_top_k = max(1, min(top_k, settings.MAX_RETRIEVAL_TOP_K))
@@ -119,21 +121,35 @@ class RetrievalService:
         if min_similarity is not None:
             stmt = stmt.where(similarity_expr >= min_similarity)
 
-        # Order by ascending cosine distance (closest vectors first)
-        stmt = stmt.order_by(distance_expr.asc()).limit(bounded_top_k)
+        # Retrieve a broader candidate pool for hybrid re-ranking if requested
+        candidate_k = min(bounded_top_k * 3, 30) if hybrid else bounded_top_k
+        stmt = stmt.order_by(distance_expr.asc()).limit(candidate_k)
 
         db_result = await db.execute(stmt)
         rows = db_result.all()
 
         results: List[RetrievalResultItem] = []
+        import re
+
+        query_tokens = [w.lower() for w in re.findall(r"\b\w+\b", query) if len(w) > 2]
+
         for r in rows:
+            sim = float(r.similarity_score)
+            if hybrid and query_tokens:
+                content_lower = r.content.lower()
+                matched_count = sum(1 for tok in query_tokens if tok in content_lower)
+                keyword_score = matched_count / len(query_tokens)
+                final_score = (0.75 * sim) + (0.25 * keyword_score)
+            else:
+                final_score = sim
+
             results.append(
                 RetrievalResultItem(
                     chunk_id=r.chunk_id,
                     document_id=r.document_id,
                     chunk_index=r.chunk_index,
                     content=r.content,
-                    similarity_score=round(float(r.similarity_score), 6),
+                    similarity_score=round(final_score, 6),
                     cosine_distance=round(float(r.cosine_distance), 6),
                     page_number=r.page_number,
                     metadata=dict(r.metadata or {}),
@@ -141,6 +157,10 @@ class RetrievalService:
                     document_original_filename=r.document_original_filename,
                 )
             )
+
+        if hybrid:
+            results.sort(key=lambda x: x.similarity_score, reverse=True)
+            results = results[:bounded_top_k]
 
         return RetrievalResponse(
             query=query,

@@ -1,0 +1,174 @@
+import csv
+import io
+import json
+import logging
+import uuid
+from typing import Any, Dict, List, Optional
+from fastapi import HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.document import Document
+from app.models.chunk import DocumentChunk
+from app.services.llm import llm_service, LLMMessage
+
+logger = logging.getLogger("cogniva.extraction_service")
+
+
+class ExtractionService:
+    """
+    Extracts structured enterprise fields (entities, dates, metrics, obligations, risks, action items)
+    with exact source provenance. Enables structured export to JSON and CSV.
+    """
+
+    async def extract_structured_data(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+        target_fields: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        stmt = select(Document).where(
+            Document.id == document_id,
+            Document.user_id == user_id,
+        )
+        res = await db.execute(stmt)
+        document = res.scalar_one_or_none()
+
+        if not document:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found or access denied.",
+            )
+
+        chunk_stmt = (
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document_id)
+            .order_by(DocumentChunk.chunk_index)
+            .limit(12)
+        )
+        c_res = await db.execute(chunk_stmt)
+        chunks = c_res.scalars().all()
+
+        if not chunks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No chunks found for this document.",
+            )
+
+        context_blocks = []
+        for c in chunks:
+            p_str = f"Page {c.page_number}" if c.page_number else f"Unit {c.chunk_index}"
+            context_blocks.append(f"[{p_str}]:\n{c.content}")
+
+        context_text = "\n\n".join(context_blocks)
+
+        fields_desc = target_fields or ["entities", "dates", "metrics", "obligations", "risks", "action_items"]
+
+        prompt = (
+            f"You are a structured enterprise data extraction engine. Extract structured intelligence from the document text below.\n\n"
+            f"TARGET CATEGORIES: {', '.join(fields_desc)}\n\n"
+            f"OUTPUT FORMAT: Return a valid JSON object matching this structure EXACTLY (do not wrap in markdown quotes if possible, output pure JSON):\n"
+            f"{{\n"
+            f'  "entities": [{{"name": "...", "type": "ORGANIZATION|PERSON|PRODUCT|LOCATION", "page": 1, "context": "..."}}],\n'
+            f'  "dates": [{{"date": "...", "event": "...", "page": 1}}],\n'
+            f'  "metrics": [{{"metric": "...", "value": "...", "unit": "...", "page": 1}}],\n'
+            f'  "obligations": [{{"party": "...", "obligation": "...", "deadline": "...", "page": 1}}],\n'
+            f'  "risks": [{{"risk": "...", "severity": "HIGH|MEDIUM|LOW", "page": 1}}],\n'
+            f'  "action_items": [{{"item": "...", "assignee": "...", "page": 1}}]\n'
+            f"}}\n\n"
+            f"DOCUMENT PASSAGES:\n{context_text}"
+        )
+
+        messages = [
+            LLMMessage(role="system", content="You are a strict JSON data extractor. Output ONLY valid JSON."),
+            LLMMessage(role="user", content=prompt),
+        ]
+
+        llm_resp = await llm_service.generate(messages=messages, temperature=0.0)
+        raw_json = llm_resp.content.strip()
+
+        # Clean markdown fence if present
+        if raw_json.startswith("```"):
+            raw_json = raw_json.split("\n", 1)[1]
+            if raw_json.endswith("```"):
+                raw_json = raw_json.rsplit("```", 1)[0]
+            raw_json = raw_json.strip()
+
+        try:
+            extracted_json = json.loads(raw_json)
+        except Exception:
+            # Fallback structure if JSON parse failed
+            extracted_json = {
+                "entities": [],
+                "dates": [],
+                "metrics": [],
+                "obligations": [],
+                "risks": [],
+                "action_items": [],
+                "raw_text": raw_json,
+            }
+
+        return {
+            "document_id": str(document.id),
+            "document_filename": document.original_filename or document.filename,
+            "data": extracted_json,
+        }
+
+    def export_as_csv(self, extracted_data: Dict[str, Any]) -> str:
+        """
+        Converts extracted structured items into a tabular CSV string.
+        Robust to both object dictionaries and string values.
+        """
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Category", "Item / Name", "Detail / Value", "Context / Entity Type", "Page"])
+
+        data = extracted_data.get("data", {})
+        
+        # Entities
+        for ent in data.get("entities", []) or data.get("key_entities", []):
+            if isinstance(ent, dict):
+                writer.writerow(["Entity", ent.get("name", ""), ent.get("type", ""), ent.get("context", ""), ent.get("page", "")])
+            else:
+                writer.writerow(["Entity", str(ent), "", "", ""])
+
+        # Dates
+        for dt in data.get("dates", []):
+            if isinstance(dt, dict):
+                writer.writerow(["Date", dt.get("date", ""), dt.get("event", ""), "", dt.get("page", "")])
+            else:
+                writer.writerow(["Date", str(dt), "", "", ""])
+
+        # Metrics
+        for met in data.get("metrics", []):
+            if isinstance(met, dict):
+                writer.writerow(["Metric", met.get("metric", ""), met.get("value", ""), met.get("unit", ""), met.get("page", "")])
+            else:
+                writer.writerow(["Metric", str(met), "", "", ""])
+
+        # Obligations
+        for ob in data.get("obligations", []):
+            if isinstance(ob, dict):
+                writer.writerow(["Obligation", ob.get("party", ""), ob.get("obligation", ""), ob.get("deadline", ""), ob.get("page", "")])
+            else:
+                writer.writerow(["Obligation", str(ob), "", "", ""])
+
+        # Risks
+        for rk in data.get("risks", []):
+            if isinstance(rk, dict):
+                writer.writerow(["Risk", rk.get("risk", ""), rk.get("severity", ""), "", rk.get("page", "")])
+            else:
+                writer.writerow(["Risk", str(rk), "", "", ""])
+
+        # Action Items
+        for ai in data.get("action_items", []):
+            if isinstance(ai, dict):
+                writer.writerow(["Action Item", ai.get("item", ""), ai.get("assignee", ""), "", ai.get("page", "")])
+            else:
+                writer.writerow(["Action Item", str(ai), "", "", ""])
+
+        return output.getvalue()
+
+
+extraction_service = ExtractionService()

@@ -11,6 +11,7 @@ import {
   User as UserIcon,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
+import ThemeToggle from "../common/ThemeToggle";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -124,17 +125,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
             <span>Log out</span>
           </button>
 
-          {/* User profile chip */}
-          <div className="mt-2 pt-2 border-t border-[#39433C] px-3 py-1.5 flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-md bg-[#2C352F] border border-[#39433C] flex items-center justify-center text-[#C0C8C1] shrink-0">
-              <UserIcon className="w-3.5 h-3.5" />
+          {/* User profile & theme section */}
+          <div className="mt-2 pt-2 border-t border-[#39433C] px-3 py-1.5 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-md bg-[#2C352F] border border-[#39433C] flex items-center justify-center text-[#C0C8C1] shrink-0">
+                <UserIcon className="w-3.5 h-3.5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium text-[#F4F5F2] truncate">
+                  {user?.full_name || user?.email?.split("@")[0]}
+                </p>
+                <p className="text-[10px] text-[#88948B] truncate">{user?.email}</p>
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-[#F4F5F2] truncate">
-                {user?.full_name || user?.email?.split("@")[0]}
-              </p>
-              <p className="text-[10px] text-[#88948B] truncate">{user?.email}</p>
-            </div>
+            <ThemeToggle compact className="shrink-0 bg-[#2C352F] border-[#39433C]" />
           </div>
         </div>
       </aside>

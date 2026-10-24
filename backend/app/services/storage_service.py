@@ -90,6 +90,15 @@ class StorageService:
                 detail="Empty file uploaded. Please upload a valid document."
             )
 
+        if file_type == "csv":
+            # Plaintext CSV validation: must not contain binary null bytes
+            if b"\x00" in header:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid CSV format: binary content detected."
+                )
+            return
+
         signatures = MAGIC_SIGNATURES.get(file_type, [])
         is_valid = any(header.startswith(sig) for sig in signatures)
         if not is_valid:

@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Storage and Document Upload Configuration
     STORAGE_DIR: str = "storage"
     MAX_UPLOAD_SIZE_MB: int = 50
-    ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx"]
+    ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx", "csv"]
 
     # Document Chunking Configuration
     CHUNK_SIZE: int = 1000

@@ -11,7 +11,7 @@ from app.models.document import Document
 from app.models.chunk import DocumentChunk
 from app.models.user import User
 from app.services.storage_service import storage_service
-from app.services.documents.extractor import document_extractor, ExtractedDocument, ExtractionError
+from app.services.documents.extractor import document_extractor, ExtractedDocument, ExtractedUnit, ExtractionError
 from app.services.documents.chunker import document_chunker, ChunkData
 from app.services.embeddings import (
     embedding_service,
@@ -196,21 +196,58 @@ class DocumentService:
                 detail=f"Document has not been processed yet. Current status: {document.status}"
             )
 
-        extracted_path = document.metadata_.get("extracted_path")
-        if not extracted_path:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Extracted content artifact not found."
+        # 1. Attempt loading from user's storage path if present
+        extracted_path = (document.metadata_ or {}).get("extracted_path")
+        if extracted_path:
+            data = storage_service.load_extracted_json(user_id=user_id, relative_json_path=extracted_path)
+            if data:
+                return ExtractedDocument(**data)
+
+        # 2. Resilient fallback: reconstruct normalized units from persisted database chunks
+        stmt = (
+            select(DocumentChunk)
+            .where(DocumentChunk.document_id == document.id)
+            .order_by(DocumentChunk.chunk_index.asc())
+        )
+        result = await db.execute(stmt)
+        chunks = list(result.scalars().all())
+
+        if chunks:
+            units: List[ExtractedUnit] = []
+            full_text_parts: List[str] = []
+            for c in chunks:
+                meta = dict(c.metadata_ or {})
+                units.append(
+                    ExtractedUnit(
+                        unit_type=meta.get("unit_type", "paragraph"),
+                        page_number=c.page_number,
+                        sequence_number=c.chunk_index + 1,
+                        text=c.content,
+                        metadata=meta,
+                    )
+                )
+                full_text_parts.append(c.content)
+
+            full_text = "\n\n".join(full_text_parts)
+            pages = [c.page_number for c in chunks if c.page_number is not None]
+            total_pages = max(pages) if pages else (1 if document.file_type == "pdf" else None)
+
+            return ExtractedDocument(
+                document_id=document.id,
+                file_type=document.file_type,
+                units=units,
+                total_pages=total_pages,
+                total_units=len(units),
+                total_characters=sum(len(u.text) for u in units),
+                total_words=sum(len(u.text.split()) for u in units),
+                full_text=full_text,
+                extracted_at=document.created_at or datetime.now(timezone.utc),
             )
 
-        data = storage_service.load_extracted_json(user_id=user_id, relative_json_path=extracted_path)
-        if not data:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Extracted content file could not be read."
-            )
-
-        return ExtractedDocument(**data)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Extracted content artifact not found in storage or database."
+        )
 
     async def get_user_documents(
         self,

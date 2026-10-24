@@ -3,6 +3,8 @@ import {
   DocumentItem,
   DocumentDeleteResponse,
   ExtractedDocument,
+  DocumentChunkListResponse,
+  DocumentChunkDetail,
 } from "../types/document";
 
 export const documentService = {
@@ -64,6 +66,14 @@ export const documentService = {
   },
 
   /**
+   * Retrieve all chunks for a document.
+   */
+  async getDocumentChunks(documentId: string): Promise<DocumentChunkListResponse> {
+    const response = await apiClient.get<DocumentChunkListResponse>(`/documents/${documentId}/chunks`);
+    return response.data;
+  },
+
+  /**
    * Delete a document belonging to the authenticated user.
    */
   async deleteDocument(id: string): Promise<DocumentDeleteResponse> {
@@ -74,8 +84,8 @@ export const documentService = {
   /**
    * Retrieve a single document chunk for citation/source inspection.
    */
-  async getDocumentChunk(documentId: string, chunkId: string) {
-    const response = await apiClient.get(`/documents/${documentId}/chunks/${chunkId}`);
+  async getDocumentChunk(documentId: string, chunkId: string): Promise<DocumentChunkDetail> {
+    const response = await apiClient.get<DocumentChunkDetail>(`/documents/${documentId}/chunks/${chunkId}`);
     return response.data;
   },
 };

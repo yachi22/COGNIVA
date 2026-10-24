@@ -98,7 +98,7 @@ class RAGService:
         )
         history = [{"role": m.role, "content": m.content} for m in recent_msgs]
 
-        # 3. Semantic retrieval from PostgreSQL pgvector
+        # 3. Semantic retrieval from PostgreSQL pgvector (with hybrid keyword re-ranking)
         retrieval_res = await retrieval_service.search(
             db=db,
             user_id=user_id,
@@ -106,6 +106,7 @@ class RAGService:
             top_k=top_k,
             document_id=document_id,
             min_similarity=min_similarity,
+            hybrid=True,
         )
 
         # If zero results and recent history exists, try follow-up query enrichment
@@ -120,6 +121,7 @@ class RAGService:
                     top_k=top_k,
                     document_id=document_id,
                     min_similarity=min_similarity,
+                    hybrid=True,
                 )
 
         # 4. Early exit on empty or below-threshold retrieval

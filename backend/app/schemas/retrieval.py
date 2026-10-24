@@ -30,6 +30,10 @@ class RetrievalRequest(BaseModel):
         le=1.0,
         description="Optional minimum cosine similarity threshold (-1.0 to 1.0, higher is more similar).",
     )
+    hybrid: bool = Field(
+        default=False,
+        description="Enable hybrid vector and keyword re-ranking.",
+    )
 
 
 class RetrievalResultItem(BaseModel):

@@ -64,3 +64,19 @@ export interface DocumentChunkDetail {
   created_at: string;
 }
 
+export interface DocumentChunkItem {
+  id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  page_number: number | null;
+  metadata_?: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DocumentChunkListResponse {
+  total: number;
+  document_id: string;
+  chunks: DocumentChunkItem[];
+}
+
