@@ -669,4 +669,208 @@ async def test_eldershield_unrelated_query_honest_refusal():
     assert len(validated) == 0
 
 
+# 19. ElderShield AI Structured Information Extraction Quality Test
+@pytest.mark.asyncio
+async def test_eldershield_structured_extraction_quality():
+    from app.services.extraction_service import extraction_service
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.filename = "ElderShield AI.docx"
+    mock_doc.original_filename = "ElderShield AI.docx"
+
+    # Persisted chunks representing ElderShield AI document sections
+    c1 = MagicMock(spec=DocumentChunk)
+    c1.chunk_index = 0
+    c1.page_number = None
+    c1.content = (
+        "Problem Statement: Older adults face escalating financial exploitation and fraud through deceptive messaging, "
+        "impersonation attacks, and urgent phishing scams. ElderShield AI is an AI-powered digital safety assistant "
+        "designed to help seniors assess suspicious text messages and communications."
+    )
+
+    c2 = MagicMock(spec=DocumentChunk)
+    c2.chunk_index = 1
+    c2.page_number = None
+    c2.content = (
+        "System Architecture: The proposed system architecture comprises a Python FastAPI backend providing real-time "
+        "linguistic risk scoring, a React user interface tailored for senior-friendly accessibility, and an NLP "
+        "syntactic analysis engine running local machine learning models to detect coercion patterns. "
+        "URL parsing/security checks inspect embedded hyperlinks."
+    )
+
+    c3 = MagicMock(spec=DocumentChunk)
+    c3.chunk_index = 2
+    c3.page_number = None
+    c3.content = (
+        "Recommendations: Users are advised to independently verify the sender through alternative trusted channels, "
+        "avoid clicking unknown links in unexpected messages, and never share confidential credentials or banking passwords."
+    )
+
+    c4 = MagicMock(spec=DocumentChunk)
+    c4.chunk_index = 36
+    c4.page_number = None
+    c4.content = (
+        "Evaluation Criteria: The prototype will be evaluated using representative legitimate and suspicious examples. "
+        "Performance will be assessed using precision, recall, false-positive rates, and usability testing with senior participant cohorts."
+    )
+
+    mock_db = AsyncMock()
+    doc_exec = MagicMock()
+    doc_exec.scalar_one_or_none.return_value = mock_doc
+
+    chunk_exec = MagicMock()
+    chunk_exec.scalars.return_value.all.return_value = [c1, c2, c3, c4]
+
+    mock_db.execute.side_effect = [doc_exec, chunk_exec]
+
+    res = await extraction_service.extract_structured_data(
+        db=mock_db,
+        user_id=user_id,
+        document_id=doc_id,
+    )
+
+    assert res["document_id"] == str(doc_id)
+    assert res["document_filename"] == "ElderShield AI.docx"
+    data = res["data"]
+
+    # 1. Entity Extraction Assertions
+    ent_names = [e["name"] for e in data.get("entities", [])]
+    ent_types = {e["name"]: e["type"] for e in data.get("entities", [])}
+
+    assert "ElderShield AI" in ent_names
+    assert ent_types["ElderShield AI"] == "PRODUCT"
+    # No overlapping or sentence fragments
+    assert "ElderShield AI proposes an AI" not in ent_names
+    assert "proposes an AI" not in ent_names
+    assert "Powered Digital Safety" not in ent_names
+    # Headings must NOT be classified as entities or technologies
+    assert "Problem Statement" not in ent_names
+    assert "System Architecture" not in ent_names
+    assert "Evaluation Criteria" not in ent_names
+    assert "Recommendations" not in ent_names
+
+    # Named technologies
+    assert "FastAPI" in ent_names
+    assert "Python" in ent_names
+    assert "React" in ent_names
+    assert "NLP" in ent_names
+    assert "Machine learning models" in ent_names
+    assert "URL parsing/security checks" in ent_names
+
+    # Context must be preserved
+    for e in data.get("entities", []):
+        assert e.get("context") and len(e["context"]) > 5
+
+    # 2. Risk Extraction Assertions
+    risk_names = [r["risk"] for r in data.get("risks", [])]
+    assert any("phishing" in r.lower() for r in risk_names)
+    assert any("fraud" in r.lower() for r in risk_names)
+    assert any("impersonation" in r.lower() for r in risk_names)
+    assert any("financial" in r.lower() for r in risk_names)
+    # Problem Statement heading must NOT be classified as an individual risk
+    assert "Problem Statement" not in risk_names
+    assert not any(r.lower().startswith("problem statement:") for r in risk_names)
+    # Severity must NOT be fabricated as HIGH or MEDIUM
+    for r in data.get("risks", []):
+        assert r.get("severity") in (None, "Unassigned")
+
+    # 3. Action Items Assertions
+    action_items = [a["item"] for a in data.get("action_items", [])]
+    assert any("verify" in a.lower() for a in action_items)
+    assert any("unknown links" in a.lower() for a in action_items)
+    assert any("credentials" in a.lower() for a in action_items)
+    # Assignee must NOT be fabricated as Engineering / Assessment Team
+    for a in data.get("action_items", []):
+        assert a.get("assignee") in (None, "Unassigned")
+        assert "Engineering" not in str(a.get("assignee", ""))
+
+    # 4. Metrics & Evaluation Assertions
+    metric_names = [m["metric"] for m in data.get("metrics", [])]
+    metric_units = {m["metric"]: m.get("unit") for m in data.get("metrics", [])}
+
+    assert "Precision" in metric_names
+    assert metric_units["Precision"] == "Evaluation Metric"
+    assert "Recall" in metric_names
+    assert metric_units["Recall"] == "Evaluation Metric"
+    assert "False-positive rate" in metric_names
+    assert metric_units["False-positive rate"] == "Evaluation Metric"
+    assert "Usability testing" in metric_names
+    assert metric_units["Usability testing"] == "Evaluation Method"
+    assert "Representative legitimate and suspicious examples" in metric_names
+    assert metric_units["Representative legitimate and suspicious examples"] == "Evaluation Material / Dataset"
+
+    # 5. Dates & Obligations: Must be empty arrays for ElderShield AI
+    assert data.get("dates") == []
+    assert data.get("obligations") == []
+
+    # 6. CSV Export Test
+    csv_content = extraction_service.export_as_csv(res)
+    assert "Category,Item / Name,Detail / Value,Context / Entity Type,Page" in csv_content
+    assert "ElderShield AI" in csv_content
+    assert "FastAPI" in csv_content
+    assert "Precision" in csv_content
+    assert "Representative legitimate and suspicious examples" in csv_content
+    assert "Unassigned" in csv_content
+
+
+# 20. Structured Information Extraction Contract Edge Case Test
+@pytest.mark.asyncio
+async def test_structured_extraction_edge_case_contract():
+    from app.services.extraction_service import extraction_service
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.filename = "Master_Services_Agreement.pdf"
+    mock_doc.original_filename = "Master_Services_Agreement.pdf"
+
+    c1 = MagicMock(spec=DocumentChunk)
+    c1.chunk_index = 0
+    c1.page_number = 1
+    c1.content = (
+        "Agreement Effective Date: 2026-06-01 between Initech Corp and Acme Corp. "
+        "Vendor shall maintain 99.9% service availability during all business hours. "
+        "Acme Corp shall remit payment within 30 days of invoice receipt."
+    )
+
+    mock_db = AsyncMock()
+    doc_exec = MagicMock()
+    doc_exec.scalar_one_or_none.return_value = mock_doc
+    chunk_exec = MagicMock()
+    chunk_exec.scalars.return_value.all.return_value = [c1]
+    mock_db.execute.side_effect = [doc_exec, chunk_exec]
+
+    res = await extraction_service.extract_structured_data(
+        db=mock_db,
+        user_id=user_id,
+        document_id=doc_id,
+    )
+    data = res["data"]
+
+    # When explicit calendar dates are present, they are extracted
+    assert len(data.get("dates", [])) >= 1
+    assert "2026-06-01" in [d["date"] for d in data.get("dates", [])]
+
+    # When explicit contractual covenants are present, they are extracted
+    assert len(data.get("obligations", [])) >= 1
+    parties = [o["party"] for o in data.get("obligations", [])]
+    assert any("Vendor" in p or "Acme" in p for p in parties)
+
+    # When percentages are present, they are extracted
+    assert any("99.9%" in m["value"] for m in data.get("metrics", []))
+
+    # Entities
+    ent_names = [e["name"] for e in data.get("entities", [])]
+    assert "Initech Corp" in ent_names or "Acme Corp" in ent_names
+
+
+
 

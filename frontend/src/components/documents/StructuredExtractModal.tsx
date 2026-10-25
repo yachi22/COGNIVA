@@ -139,8 +139,12 @@ export const StructuredExtractModal: React.FC<StructuredExtractModalProps> = ({
                     <div className="divide-y divide-border/60 bg-surface">
                       {list.map((item: any, idx: number) => {
                         const isObject = typeof item === "object" && item !== null;
-                        const value = isObject ? item.value || item.entity || item.item || item.description || JSON.stringify(item) : String(item);
-                        const context = isObject ? item.context || item.type || item.provenance : null;
+                        const value = isObject
+                          ? item.name || item.metric || item.risk || item.item || item.obligation || item.date || item.value || item.entity || item.description || JSON.stringify(item)
+                          : String(item);
+                        const context = isObject
+                          ? item.type || item.unit || item.context || item.severity || item.event || item.provenance
+                          : null;
 
                         return (
                           <div key={idx} className="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-panel/20 transition-colors">

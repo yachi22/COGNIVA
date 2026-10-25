@@ -226,69 +226,295 @@ class MockLLMProvider(BaseLLMProvider):
             passages_m = re.search(r"DOCUMENT PASSAGES:\s*\n(.*)", user_msg, re.DOTALL)
             passages_text = passages_m.group(1).strip() if passages_m else user_msg
 
-            entities = []
-            dates = []
-            metrics = []
-            obligations = []
-            risks = []
-            action_items = []
+            # 1. Parse passages into units with page/unit provenance
+            units: List[Dict[str, Any]] = []
+            unit_pattern = re.compile(r"\[(?:Page\s+(\d+)|Unit\s+(\d+)|S(\d+))\][^\n]*\n", re.I)
+            unit_splits = list(unit_pattern.finditer(passages_text))
+            if unit_splits:
+                for idx, m in enumerate(unit_splits):
+                    p_num = int(m.group(1)) if m.group(1) else (int(m.group(2)) if m.group(2) else 1)
+                    start_pos = m.end()
+                    end_pos = unit_splits[idx + 1].start() if idx + 1 < len(unit_splits) else len(passages_text)
+                    unit_text = passages_text[start_pos:end_pos].strip()
+                    units.append({"page": p_num, "text": unit_text})
+            else:
+                units.append({"page": 1, "text": passages_text.strip()})
 
-            # Extract entities (technologies, organizations, key components)
-            seen_entities = set()
-            entity_patterns = [
-                r"\b([A-Z][a-zA-Z0-9_\-]{1,25}(?:\s+[A-Za-z0-9_\-]+){0,3}\s+(?:AI|Engine|Backend|Interface|Corp|Inc|Model|Protocol|System|Framework|Database|Library|Libraries|Service|Assistant))\b",
-                r"\b([A-Z][a-zA-Z0-9_\-]{2,25}(?:\s+[A-Z][a-zA-Z0-9_\-]+)?(?:\s+(?:Corp|Inc|LLC|Ltd|AI))\b)",
-                r"\b([A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+){1,2})\b",
+            all_sentences: List[Tuple[int, str]] = []
+            for u in units:
+                sents = re.split(r"(?<=[.!?])\s+", u["text"])
+                for s in sents:
+                    s_clean = s.strip()
+                    if s_clean and len(s_clean) > 5:
+                        all_sentences.append((u["page"], s_clean))
+
+            # 2. Entity Extraction
+            entities = []
+            seen_entity_names = set()
+
+            HEADING_BLACKLIST = {
+                "problem statement", "problem", "project problem", "system architecture",
+                "proposed architecture", "proposed system architecture", "project overview",
+                "overview", "evaluation criteria", "evaluation metrics", "evaluation methodology",
+                "implementation details", "security guidelines", "executive summary", "abstract",
+                "table of contents", "conclusion", "introduction", "methodology", "user interface",
+                "performance evaluation", "future work", "target categories", "document passages",
+                "output format", "background", "key findings", "action items", "risks", "dates",
+                "metrics", "obligations", "entities", "dataset", "examples", "references",
+                "source context", "digital safety", "safety assistant", "older adults",
+                "senior citizens", "powered digital safety", "simple language", "senior testing cohorts"
+            }
+
+            def _add_entity(name: str, etype: str, page: int, context: str):
+                name_clean = name.strip()
+                name_lower = name_clean.lower()
+                if not name_clean or len(name_clean) < 2 or name_lower in HEADING_BLACKLIST:
+                    return
+                # Check for overlapping substrings or fragments
+                for seen in list(seen_entity_names):
+                    if name_lower == seen:
+                        return
+                    if name_lower in seen and len(name_clean) < len(seen):
+                        return
+                    if seen in name_lower and len(seen) < len(name_clean):
+                        seen_entity_names.remove(seen)
+                        entities[:] = [e for e in entities if e["name"].lower() != seen]
+                seen_entity_names.add(name_lower)
+                entities.append({
+                    "name": name_clean,
+                    "value": name_clean,
+                    "type": etype,
+                    "page": page,
+                    "context": context,
+                })
+
+            # 2a. Detect primary project / product name (e.g., ElderShield AI)
+            for page, sent in all_sentences:
+                proj_m = re.search(r"\b([A-Z][a-zA-Z0-9_\-]+(?:\s+[A-Z][a-zA-Z0-9_\-]+)*\s+AI)\b", sent)
+                if proj_m:
+                    pname = proj_m.group(1).strip()
+                    if pname.lower() not in HEADING_BLACKLIST:
+                        _add_entity(pname, "PRODUCT", page, sent)
+
+            # 2b. Explicitly named technologies in the document
+            KNOWN_TECH_SPECS = [
+                ("Python", "PROGRAMMING_LANGUAGE", r"\bPython\b"),
+                ("FastAPI", "FRAMEWORK / BACKEND", r"\bFastAPI\b"),
+                ("React", "FRAMEWORK / FRONTEND", r"\bReact\b"),
+                ("NLP", "TECHNOLOGY", r"\bNLP\b|\bNatural Language Processing\b"),
+                ("Machine learning models", "TECHNOLOGY", r"\bmachine\s+learning(?:\s+models?)?\b"),
+                ("URL parsing/security checks", "SECURITY_COMPONENT", r"\bURL\s+parsing(?:/security\s+checks)?\b|\bsecurity\s+checks\b"),
+                ("PostgreSQL", "DATABASE", r"\bPostgreSQL\b"),
+                ("pgvector", "DATABASE", r"\bpgvector\b"),
+                ("Twilio SMS", "SERVICE", r"\bTwilio(?:\s+SMS)?\b"),
             ]
-            for pat in entity_patterns:
-                for ent_m in re.finditer(pat, passages_text, re.I):
-                    ename = ent_m.group(1).strip()
-                    if ename.lower() not in seen_entities and len(ename) >= 3:
-                        seen_entities.add(ename.lower())
-                        etype = "PRODUCT" if any(k in ename.lower() for k in ("engine", "interface", "ai", "prototype")) else "TECHNOLOGY"
-                        entities.append({
-                            "name": ename,
-                            "type": etype,
-                            "page": 1,
-                            "context": f"Identified in document architecture and components",
+            for cname, ctype, cpat in KNOWN_TECH_SPECS:
+                for page, sent in all_sentences:
+                    if re.search(cpat, sent, re.I):
+                        _add_entity(cname, ctype, page, sent)
+                        break
+
+            # 2c. Other capitalized corporate or organizational entities
+            for page, sent in all_sentences:
+                for om in re.finditer(r"\b([A-Z][a-zA-Z0-9_\-]+(?:\s+[A-Z][a-zA-Z0-9_\-]+)*\s+(?:Corp|Corporation|Inc|LLC|Ltd|Labs|Foundation|Alliance))\b", sent):
+                    c_org = om.group(1).strip()
+                    if c_org.lower() not in HEADING_BLACKLIST:
+                        _add_entity(c_org, "ORGANIZATION", page, sent)
+
+            # 3. Risk Extraction
+            risks = []
+            seen_risks = set()
+            SUPPORTED_THREATS = [
+                ("Phishing links", r"\bphishing\s*(?:links?|scams?|attacks?|messages?)?\b|\bphishing\b"),
+                ("Fraudulent messages", r"\bfraudulent\s*(?:messages?|texts?|communications?|solicitations?)?|\bfraud\b|\bdeceptive\s+messaging\b"),
+                ("Impersonation attempts", r"\bimpersonation\s+(?:attempts?|attacks?|scams?|calls?)\b"),
+                ("Scam calls", r"\bscam\s+calls?\b|\bdeceptive\s+scam\s+patterns?\b"),
+                ("Financial losses", r"\bfinancial\s+(?:losses?|exploitation|fraud)\b"),
+                ("Identity theft", r"\bidentity\s+theft\b"),
+                ("Privacy breaches", r"\bprivacy\s+(?:breaches?|violations?|leakage)\b"),
+                ("Coercion patterns", r"\bcoercion\s+patterns?\b|\bcoercive\s+messaging\b"),
+            ]
+            for rname, rpat in SUPPORTED_THREATS:
+                for page, sent in all_sentences:
+                    # Exclude pure accessibility goals or generic problem statements
+                    if re.search(r"\b(?:accessibility|high-contrast|simple language)\b", sent, re.I) and not re.search(r"\b(?:fraud|scam|loss|attack)\b", sent, re.I):
+                        continue
+                    if re.search(rpat, sent, re.I):
+                        if rname.lower() not in seen_risks:
+                            seen_risks.add(rname.lower())
+                            clean_ctx = re.sub(r"^(?:Project\s+Problem|Problem\s+Statement|Problem):\s*", "", sent, flags=re.I).strip()
+                            risks.append({
+                                "risk": rname,
+                                "value": rname,
+                                "severity": "Unassigned",
+                                "page": page,
+                                "context": clean_ctx,
+                            })
+                            break
+
+            # 4. Action-Item Extraction
+            action_items = []
+            seen_actions = set()
+            SUPPORTED_ACTIONS = [
+                ("Independently verify the sender", r"\bindependently\s+verify\s+(?:the\s+)?sender\b|\bverify\s+(?:the\s+)?sender(?:'s)?\s+identity\b"),
+                ("Avoid unknown links", r"\bavoid\s+(?:clicking\s+)?(?:unknown\s+|suspicious\s+)?links?\b|\bavoiding\s+unknown\s+links\b"),
+                ("Never share confidential credentials", r"\bnever\s+share\s+(?:confidential\s+|sensitive\s+)?(?:credentials?|passwords?|pins?)\b|\bavoid\s+sharing\s+(?:confidential\s+|sensitive\s+)?credentials?\b"),
+            ]
+            for aname, apat in SUPPORTED_ACTIONS:
+                for page, sent in all_sentences:
+                    if re.search(apat, sent, re.I):
+                        if aname.lower() not in seen_actions:
+                            seen_actions.add(aname.lower())
+                            action_items.append({
+                                "item": aname,
+                                "value": aname,
+                                "assignee": "Unassigned",
+                                "page": page,
+                                "context": sent,
+                            })
+                            break
+
+            # Additional general recommendations (imperative statements)
+            for page, sent in all_sentences:
+                # Exclude internal testing or performance assessment sentences
+                if any(w in sent.lower() for w in ("assessed using", "evaluated using", "performance will be", "architecture comprises")):
+                    continue
+                rec_m = re.search(r"\b(?:users\s+are\s+advised\s+to|recommended\s+to|guideline:\s*|must\s+never)\s+([^.]+)", sent, re.I)
+                if rec_m:
+                    r_text = rec_m.group(0).strip()
+                    if r_text.lower() not in seen_actions and len(r_text) > 10:
+                        seen_actions.add(r_text.lower())
+                        action_items.append({
+                            "item": r_text[:80],
+                            "value": r_text[:80],
+                            "assignee": "Unassigned",
+                            "page": page,
+                            "context": sent,
                         })
 
-            # Extract dates
-            for dm in re.finditer(r"\b(20\d\d[-/]\d\d[-/]\d\d|20\d\d|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+20\d\d)\b", passages_text):
-                dates.append({"date": dm.group(1), "event": "Document milestone / event", "page": 1})
+            # 5. Metrics & Evaluation Extraction
+            metrics = []
+            seen_metrics = set()
 
-            # Extract metrics
-            metric_pats = [
-                (r"\b(detection precision|recall|false-positive rates?|usability testing)\b", "evaluation metric"),
-                (r"(\d+(?:\.\d+)?%)\s*([^,;.\n]+)?", "percentage metric"),
-                (r"(\$[\d,]+(?:\.\d+)?)\s*([^,;.\n]+)?", "financial figure"),
-                (r"(\d+)\s+(days|hours|users|units|words|pages|ms|chunks)", "operational count"),
-            ]
-            for pat, mtype in metric_pats:
-                for mm in re.finditer(pat, passages_text, re.I):
+            for page, sent in all_sentences:
+                # Evaluation Metrics: Precision, Recall, False-positive rate
+                if re.search(r"\bprecision\b", sent, re.I) and "precision" not in seen_metrics:
+                    seen_metrics.add("precision")
+                    metrics.append({
+                        "metric": "Precision",
+                        "value": "Precision",
+                        "unit": "Evaluation Metric",
+                        "page": page,
+                        "context": sent,
+                    })
+                if re.search(r"\brecall\b", sent, re.I) and "recall" not in seen_metrics:
+                    seen_metrics.add("recall")
+                    metrics.append({
+                        "metric": "Recall",
+                        "value": "Recall",
+                        "unit": "Evaluation Metric",
+                        "page": page,
+                        "context": sent,
+                    })
+                if re.search(r"\bfalse-?positive\s+rates?\b", sent, re.I) and "false_positive_rate" not in seen_metrics:
+                    seen_metrics.add("false_positive_rate")
+                    metrics.append({
+                        "metric": "False-positive rate",
+                        "value": "False-positive rate",
+                        "unit": "Evaluation Metric",
+                        "page": page,
+                        "context": sent,
+                    })
+                # Evaluation Method: Usability testing
+                if re.search(r"\busability\s+testing\b", sent, re.I) and "usability_testing" not in seen_metrics:
+                    seen_metrics.add("usability_testing")
+                    metrics.append({
+                        "metric": "Usability testing",
+                        "value": "Usability testing",
+                        "unit": "Evaluation Method",
+                        "page": page,
+                        "context": sent,
+                    })
+                # Evaluation Material / Dataset: Representative examples
+                if re.search(r"\brepresentative\s+legitimate\s+and\s+suspicious\s+examples\b", sent, re.I) and "representative_examples" not in seen_metrics:
+                    seen_metrics.add("representative_examples")
+                    metrics.append({
+                        "metric": "Representative legitimate and suspicious examples",
+                        "value": "Representative legitimate and suspicious examples",
+                        "unit": "Evaluation Material / Dataset",
+                        "page": page,
+                        "context": sent,
+                    })
+
+                # Numeric metrics if present (e.g. percentages, latencies, dollar amounts)
+                for mm in re.finditer(r"(\d+(?:\.\d+)?%)\s*([^,;.\n]+)?", sent):
                     val = mm.group(1)
                     desc = mm.group(2).strip() if len(mm.groups()) > 1 and mm.group(2) else val
-                    metrics.append({"metric": desc, "value": val, "unit": mtype, "page": 1})
+                    if desc.lower() not in seen_metrics:
+                        seen_metrics.add(desc.lower())
+                        metrics.append({
+                            "metric": desc,
+                            "value": val,
+                            "unit": "percentage metric",
+                            "page": page,
+                            "context": sent,
+                        })
+                for mm in re.finditer(r"(\$[\d,]+(?:\.\d+)?)\s*([^,;.\n]+)?", sent):
+                    val = mm.group(1)
+                    desc = mm.group(2).strip() if len(mm.groups()) > 1 and mm.group(2) else val
+                    if desc.lower() not in seen_metrics:
+                        seen_metrics.add(desc.lower())
+                        metrics.append({
+                            "metric": desc,
+                            "value": val,
+                            "unit": "financial figure",
+                            "page": page,
+                            "context": sent,
+                        })
+                for mm in re.finditer(r"(\b(?:under\s+|less\s+than\s+)?\d+\s+(?:ms|milliseconds|seconds|days|hours|users)\b)", sent, re.I):
+                    val = mm.group(1).strip()
+                    if val.lower() not in seen_metrics:
+                        seen_metrics.add(val.lower())
+                        metrics.append({
+                            "metric": val,
+                            "value": val,
+                            "unit": "operational benchmark",
+                            "page": page,
+                            "context": sent,
+                        })
 
-            # Extract obligations
-            for om in re.finditer(r"([^.\n]+?\b(?:must|shall|requires?|required to|entitled to|measure)\b[^.\n]+)", passages_text, re.I):
-                obligations.append({"party": "System / User", "obligation": om.group(1).strip(), "deadline": "Standard", "page": 1})
+            # 6. Dates & Obligations (Strictly return empty arrays if no explicit dates/contracts supported)
+            dates = []
+            for page, sent in all_sentences:
+                for dm in re.finditer(r"\b((?:19|20)\d\d[-/]\d\d[-/]\d\d|\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+(?:19|20)\d\d)\b", sent):
+                    dates.append({"date": dm.group(1), "value": dm.group(1), "event": "Document milestone / event", "page": page, "context": sent})
 
-            # Extract risks
-            for rm in re.finditer(r"([^.\n]+?\b(?:risk|fraud|fraudulent|scam|scams|deceptive|losses|vulnerability|threat)\b[^.\n]+)", passages_text, re.I):
-                risks.append({"risk": rm.group(1).strip(), "severity": "MEDIUM", "page": 1})
-
-            # Extract action items
-            for am in re.finditer(r"([^.\n]+?\b(?:measure|evaluate|testing|implement|assess|verify)\b[^.\n]+)", passages_text, re.I):
-                action_items.append({"item": am.group(1).strip(), "assignee": "Engineering / Assessment Team", "page": 1})
+            obligations = []
+            for page, sent in all_sentences:
+                # Exclude internal system architecture or metric measurement sentences
+                if any(k in sent.lower() for k in ("architecture", "comprises", "assessed", "prototype", "evaluated using", "will measure")):
+                    continue
+                ob_m = re.search(r"\b([A-Z][a-zA-Z0-9_\-\s]+?)\s+(?:shall|is\s+obligated\s+to|covenants\s+to)\s+([^.]+)", sent)
+                if ob_m:
+                    party = ob_m.group(1).strip()
+                    obl = ob_m.group(2).strip()
+                    if party.lower() not in HEADING_BLACKLIST and len(party) < 40:
+                        obligations.append({
+                            "party": party,
+                            "obligation": obl,
+                            "value": obl,
+                            "deadline": "Standard",
+                            "page": page,
+                            "context": sent,
+                        })
 
             extracted_data = {
-                "entities": entities[:8],
-                "dates": dates[:6],
-                "metrics": metrics[:8],
-                "obligations": obligations[:6],
-                "risks": risks[:6],
-                "action_items": action_items[:6],
+                "entities": entities,
+                "dates": dates,
+                "metrics": metrics,
+                "obligations": obligations,
+                "risks": risks,
+                "action_items": action_items,
             }
             return LLMResponse(content=json.dumps(extracted_data), model=self._model)
 

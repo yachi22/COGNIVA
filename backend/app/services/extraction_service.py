@@ -45,7 +45,7 @@ class ExtractionService:
             select(DocumentChunk)
             .where(DocumentChunk.document_id == document_id)
             .order_by(DocumentChunk.chunk_index)
-            .limit(12)
+            .limit(100)
         )
         c_res = await db.execute(chunk_stmt)
         chunks = c_res.scalars().all()
@@ -68,13 +68,27 @@ class ExtractionService:
         prompt = (
             f"You are a structured enterprise data extraction engine. Extract structured intelligence from the document text below.\n\n"
             f"TARGET CATEGORIES: {', '.join(fields_desc)}\n\n"
+            f"STRICT EXTRACTION RULES:\n"
+            f"1. ENTITIES: Extract meaningful, complete proper names (e.g., 'ElderShield AI', not overlapping fragments like 'ElderShield AI proposes an AI'). "
+            f"Explicitly extract named technologies with accurate classification (e.g., Python as PROGRAMMING_LANGUAGE, FastAPI as FRAMEWORK/BACKEND, React as FRAMEWORK/FRONTEND, "
+            f"NLP as TECHNOLOGY, Machine learning models as TECHNOLOGY, URL parsing/security checks as SECURITY_COMPONENT). "
+            f"NEVER classify generic headings (like 'Problem Statement', 'System Architecture', 'Evaluation Criteria') as technologies or products. Include source context sentence.\n"
+            f"2. RISKS: Distinguish actual threats, attack vectors, vulnerabilities, and consequences (e.g., phishing links, fraudulent messages, impersonation attempts, scam calls, "
+            f"financial losses, identity theft, privacy breaches) from general problem statements or accessibility goals. "
+            f"Do not invent severity levels if the source does not assign them; leave severity null or unassigned.\n"
+            f"3. ACTION ITEMS: Extract concrete actionable recommendations and protective guidance (e.g., independently verifying the sender, avoiding unknown links, "
+            f"never sharing confidential credentials). Do not invent task assignees or deadlines.\n"
+            f"4. METRICS & EVALUATION: Extract precision, recall, and false-positive rates as evaluation metrics. Extract usability testing as an evaluation method. "
+            f"Retain representative legitimate and suspicious examples as evaluation material/dataset, without misclassifying them as metrics.\n"
+            f"5. DATES & OBLIGATIONS: Return empty arrays [] if the document contains no supported dates or contractual obligations. Never fabricate dates, parties, or deadlines.\n"
+            f"6. PROVENANCE: Associate each item with its correct source page or unit number.\n\n"
             f"OUTPUT FORMAT: Return a valid JSON object matching this structure EXACTLY (do not wrap in markdown quotes if possible, output pure JSON):\n"
             f"{{\n"
-            f'  "entities": [{{"name": "...", "type": "ORGANIZATION|PERSON|PRODUCT|LOCATION", "page": 1, "context": "..."}}],\n'
+            f'  "entities": [{{"name": "...", "type": "ORGANIZATION|PERSON|PRODUCT|TECHNOLOGY|FRAMEWORK|DATABASE|SECURITY_COMPONENT", "page": 1, "context": "..."}}],\n'
             f'  "dates": [{{"date": "...", "event": "...", "page": 1}}],\n'
             f'  "metrics": [{{"metric": "...", "value": "...", "unit": "...", "page": 1}}],\n'
             f'  "obligations": [{{"party": "...", "obligation": "...", "deadline": "...", "page": 1}}],\n'
-            f'  "risks": [{{"risk": "...", "severity": "HIGH|MEDIUM|LOW", "page": 1}}],\n'
+            f'  "risks": [{{"risk": "...", "severity": "HIGH|MEDIUM|LOW|Unassigned", "page": 1}}],\n'
             f'  "action_items": [{{"item": "...", "assignee": "...", "page": 1}}]\n'
             f"}}\n\n"
             f"DOCUMENT PASSAGES:\n{context_text}"
@@ -157,16 +171,20 @@ class ExtractionService:
         # Risks
         for rk in data.get("risks", []):
             if isinstance(rk, dict):
-                writer.writerow(["Risk", rk.get("risk", ""), rk.get("severity", ""), "", rk.get("page", "")])
+                r_name = rk.get("risk") or rk.get("name") or rk.get("item") or ""
+                r_sev = rk.get("severity") or "Unassigned"
+                writer.writerow(["Risk", r_name, r_sev, rk.get("context", ""), rk.get("page", "")])
             else:
-                writer.writerow(["Risk", str(rk), "", "", ""])
+                writer.writerow(["Risk", str(rk), "Unassigned", "", ""])
 
         # Action Items
         for ai in data.get("action_items", []):
             if isinstance(ai, dict):
-                writer.writerow(["Action Item", ai.get("item", ""), ai.get("assignee", ""), "", ai.get("page", "")])
+                a_name = ai.get("item") or ai.get("name") or ""
+                a_who = ai.get("assignee") or "Unassigned"
+                writer.writerow(["Action Item", a_name, a_who, ai.get("context", ""), ai.get("page", "")])
             else:
-                writer.writerow(["Action Item", str(ai), "", "", ""])
+                writer.writerow(["Action Item", str(ai), "Unassigned", "", ""])
 
         return output.getvalue()
 
