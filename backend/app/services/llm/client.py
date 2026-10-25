@@ -356,9 +356,9 @@ class MockLLMProvider(BaseLLMProvider):
             action_items = []
             seen_actions = set()
             SUPPORTED_ACTIONS = [
-                ("Independently verify the sender", r"\bindependently\s+verify\s+(?:the\s+)?sender\b|\bverify\s+(?:the\s+)?sender(?:'s)?\s+identity\b"),
-                ("Avoid unknown links", r"\bavoid\s+(?:clicking\s+)?(?:unknown\s+|suspicious\s+)?links?\b|\bavoiding\s+unknown\s+links\b"),
-                ("Never share confidential credentials", r"\bnever\s+share\s+(?:confidential\s+|sensitive\s+)?(?:credentials?|passwords?|pins?)\b|\bavoid\s+sharing\s+(?:confidential\s+|sensitive\s+)?credentials?\b"),
+                ("Independently verify the sender", r"\bindependently\s+verify(?:ing)?\s+(?:the\s+)?sender\b|\bverify(?:ing)?\s+(?:the\s+)?sender(?:'s)?\s+identity\b|\bverif(?:y|ying)\s+suspicious\s+communications\b"),
+                ("Avoid unknown links", r"\bavoid(?:ing)?\s+(?:clicking\s+)?(?:unknown\s+|suspicious\s+)?links?\b"),
+                ("Never share confidential credentials", r"\bnever\s+shar(?:e|ing)\s+(?:confidential\s+|sensitive\s+)?(?:credentials?|passwords?|pins?)\b|\bavoid(?:ing)?\s+shar(?:e|ing)\s+(?:confidential\s+|sensitive\s+)?credentials?\b|\bprotect(?:ing)?\s+passwords,\s*pins\b"),
             ]
             for aname, apat in SUPPORTED_ACTIONS:
                 for page, sent in all_sentences:
