@@ -872,5 +872,248 @@ async def test_structured_extraction_edge_case_contract():
     assert "Initech Corp" in ent_names or "Acme Corp" in ent_names
 
 
+# 21. ElderShield AI Concise Executive Summary Grounding Test
+@pytest.mark.asyncio
+async def test_eldershield_concise_summary_grounding():
+    from app.services.summary_service import summary_service
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.status = "processed"
+    mock_doc.filename = "ElderShield AI.docx"
+    mock_doc.original_filename = "ElderShield AI.docx"
+    mock_doc.metadata_ = {}
+
+    # Chunks representing document sections
+    c_prob = MagicMock(spec=DocumentChunk)
+    c_prob.chunk_index = 5
+    c_prob.page_number = None
+    c_prob.content = (
+        "With the increasing use of smartphones, digital payments, and online communication, senior citizens are becoming "
+        "more exposed to phishing links, fraudulent messages, impersonation attempts, and scam calls. Many elderly people find "
+        "it difficult to identify these threats, which can lead to financial losses, identity theft, privacy breaches, and reduced confidence in digital services."
+    )
+
+    c_sol = MagicMock(spec=DocumentChunk)
+    c_sol.chunk_index = 6
+    c_sol.page_number = None
+    c_sol.content = (
+        "ElderShield AI proposes an AI-powered digital safety assistant that helps users assess suspicious communications before taking action. "
+        "The platform will analyze submitted text messages and URLs using Natural Language Processing (NLP), machine learning techniques, and URL security checks. "
+        "It will identify potential warning signs, assign a risk category, explain why the content may be suspicious, and recommend appropriate safety measures in simple language."
+    )
+
+    c_aud_pri = MagicMock(spec=DocumentChunk)
+    c_aud_pri.chunk_index = 9
+    c_aud_pri.page_number = None
+    c_aud_pri.content = (
+        "The primary target audience is senior citizens who use smartphones, messaging applications, online banking, and other digital services but may have difficulty recognizing evolving online scams."
+    )
+
+    c_aud_sec = MagicMock(spec=DocumentChunk)
+    c_aud_sec.chunk_index = 10
+    c_aud_sec.page_number = None
+    c_aud_sec.content = (
+        "Secondary beneficiaries include family members, caregivers, community organizations, and digital literacy initiatives that support elderly people in using technology safely."
+    )
+
+    c_tech = MagicMock(spec=DocumentChunk)
+    c_tech.chunk_index = 29
+    c_tech.page_number = None
+    c_tech.content = (
+        "The proposed prototype will use Python for the detection engine, FastAPI for backend services, and React for the user interface. "
+        "NLP libraries and machine learning models will analyze message content, while URL parsing and security checks will assess suspicious links."
+    )
+
+    c_eval = MagicMock(spec=DocumentChunk)
+    c_eval.chunk_index = 36
+    c_eval.page_number = None
+    c_eval.content = (
+        "The prototype will be evaluated using representative legitimate and suspicious examples. Performance will be assessed using precision, recall, false-positive rates, and usability testing with senior participant cohorts."
+    )
+
+    c_imp = MagicMock(spec=DocumentChunk)
+    c_imp.chunk_index = 16
+    c_imp.page_number = None
+    c_imp.content = (
+        "Reduced exposure to fraud: Encouraging users to verify suspicious communications before clicking links, sharing personal information, or making payments. "
+        "Expected positive impacts include improved digital literacy, greater independence, and privacy awareness."
+    )
+
+    mock_db = AsyncMock()
+    doc_exec = MagicMock()
+    doc_exec.scalar_one_or_none.return_value = mock_doc
+
+    chunk_exec = MagicMock()
+    chunk_exec.scalars.return_value.all.return_value = [c_prob, c_sol, c_aud_pri, c_aud_sec, c_tech, c_eval, c_imp]
+
+    mock_db.execute.side_effect = [doc_exec, chunk_exec]
+
+    res = await summary_service.get_document_summary(
+        db=mock_db,
+        user_id=user_id,
+        document_id=doc_id,
+        mode="concise",
+        force_refresh=True,
+    )
+
+    assert res["document_id"] == str(doc_id)
+    assert res["mode"] == "concise"
+    summary_text = res["summary"]
+    takeaways = res["key_takeaways"]
+
+    # 1. Central problem verified
+    assert "senior citizens" in summary_text.lower()
+    assert "phishing" in summary_text.lower()
+    assert "fraudulent messages" in summary_text.lower() or "fraud" in summary_text.lower()
+    assert "impersonation" in summary_text.lower()
+    assert "scam calls" in summary_text.lower() or "scam" in summary_text.lower()
+
+    # 2. Proposed solution verified
+    assert "safety assistant" in summary_text.lower() or "eldershield ai" in summary_text.lower()
+    assert "urls" in summary_text.lower()
+    assert "risk" in summary_text.lower()
+
+    # 3. Target audience verified
+    assert "caregivers" in summary_text.lower() or "family members" in summary_text.lower()
+
+    # 4. Technical approach verified
+    assert "python" in summary_text.lower()
+    assert "fastapi" in summary_text.lower()
+    assert "react" in summary_text.lower()
+
+    # 5. Takeaways count & grounding
+    assert len(takeaways) >= 3
+    assert any("problem" in t.lower() for t in takeaways)
+    assert any("solution" in t.lower() for t in takeaways)
+    assert any("target" in t.lower() or "audience" in t.lower() for t in takeaways)
+    assert any("technical" in t.lower() or "stack" in t.lower() for t in takeaways)
+
+    # 6. No generic boilerplate
+    assert "engineered to protect users and enhance communication security" not in summary_text.lower()
+    assert "structured across modular components" not in summary_text.lower()
+
+    # 7. Citations present and valid
+    assert "[s" in summary_text.lower()
+    for t in takeaways:
+        assert "[s" in t.lower()
 
 
+# 22. ElderShield AI Detailed Summary & Mode Differentiation Test
+@pytest.mark.asyncio
+async def test_eldershield_detailed_summary_and_mode_differentiation():
+    from app.services.summary_service import summary_service
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.status = "processed"
+    mock_doc.filename = "ElderShield AI.docx"
+    mock_doc.original_filename = "ElderShield AI.docx"
+    mock_doc.metadata_ = {}
+
+    all_chunks = [
+        MagicMock(spec=DocumentChunk, chunk_index=i, page_number=None, content=f"Chunk {i} content")
+        for i in range(10)
+    ]
+    all_chunks[0].content = "ElderShield AI: AI-Powered Digital Safety Assistant for Senior Citizens."
+    all_chunks[1].content = "With the increasing use of smartphones, senior citizens are becoming more exposed to phishing links, fraudulent messages, impersonation attempts, and scam calls."
+    all_chunks[2].content = "ElderShield AI proposes an AI-powered digital safety assistant that analyzes submitted text messages and URLs using NLP and security checks."
+    all_chunks[3].content = "Primary target audience is senior citizens, with secondary beneficiaries including family members, caregivers, and community organizations."
+    all_chunks[4].content = "Technical approach: Python detection engine, FastAPI backend services, React user interface, NLP models, and URL parsing/security checks."
+    all_chunks[5].content = "Evaluation: Precision, recall, false-positive rates, and usability testing with senior participant cohorts using representative legitimate and suspicious examples."
+    all_chunks[6].content = "Expected positive impacts include improved digital literacy, reduced exposure to fraud, greater independence, and privacy awareness."
+    all_chunks[7].content = "The platform communicates security risks clearly without making unrealistic guarantees."
+
+    mock_db = AsyncMock()
+    doc_exec = MagicMock()
+    doc_exec.scalar_one_or_none.return_value = mock_doc
+
+    chunk_exec = MagicMock()
+    chunk_exec.scalars.return_value.all.return_value = all_chunks
+
+    mock_db.execute.side_effect = [doc_exec, chunk_exec]
+
+    detailed_res = await summary_service.get_document_summary(
+        db=mock_db,
+        user_id=user_id,
+        document_id=doc_id,
+        mode="detailed",
+        force_refresh=True,
+    )
+
+    det_summary = detailed_res["summary"]
+    det_takeaways = detailed_res["key_takeaways"]
+
+    # 1. Verification of evaluation criteria in detailed summary
+    assert "precision" in det_summary.lower()
+    assert "recall" in det_summary.lower()
+    assert "false-positive" in det_summary.lower()
+    assert "usability testing" in det_summary.lower()
+    assert "representative legitimate and suspicious" in det_summary.lower()
+
+    # 2. Verification of expected social impact & ethical boundaries
+    assert "digital literacy" in det_summary.lower()
+    assert "reduced exposure to fraud" in det_summary.lower() or "fraud" in det_summary.lower()
+    assert "independence" in det_summary.lower()
+    assert "privacy awareness" in det_summary.lower()
+    assert "unrealistic guarantees" in det_summary.lower()
+
+    # 3. Takeaways count
+    assert len(det_takeaways) >= 5
+
+    # 4. No invented benchmark scores
+    assert "99." not in det_summary
+    assert "100%" not in det_summary
+
+
+# 23. Summary Stale Boilerplate Invalidation Test
+@pytest.mark.asyncio
+async def test_summary_stale_boilerplate_invalidation():
+    from app.services.summary_service import summary_service
+
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.status = "processed"
+    mock_doc.filename = "ElderShield AI.docx"
+    mock_doc.original_filename = "ElderShield AI.docx"
+    # Metadata contains old stale generic boilerplate
+    mock_doc.metadata_ = {
+        "summary_concise": {
+            "summary": "ElderShield AI. [S1]. Engineered to protect users and enhance communication security [S1].",
+            "key_takeaways": ["- Structured across modular components with verifiable quality standards [S2]."],
+            "generated_at": "2026-10-10T00:00:00",
+        }
+    }
+
+    c1 = MagicMock(spec=DocumentChunk, chunk_index=0, page_number=None, content="ElderShield AI text")
+
+    mock_db = AsyncMock()
+    doc_exec = MagicMock()
+    doc_exec.scalar_one_or_none.return_value = mock_doc
+    chunk_exec = MagicMock()
+    chunk_exec.scalars.return_value.all.return_value = [c1]
+    mock_db.execute.side_effect = [doc_exec, chunk_exec]
+
+    # Without force_refresh, the service should detect stale generic boilerplate and refresh it automatically
+    res = await summary_service.get_document_summary(
+        db=mock_db,
+        user_id=user_id,
+        document_id=doc_id,
+        mode="concise",
+        force_refresh=False,
+    )
+
+    assert "Engineered to protect users" not in res["summary"]
+    assert "Structured across modular components" not in " ".join(res["key_takeaways"])

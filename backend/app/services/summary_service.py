@@ -53,7 +53,13 @@ class SummaryService:
         # Check existing cached summary if not forcing refresh
         if not force_refresh and cache_key in meta:
             cached = meta[cache_key]
-            if isinstance(cached, dict) and "summary" in cached:
+            # Invalidate stale generic boilerplate summaries
+            is_stale_generic = False
+            if isinstance(cached, dict):
+                c_text = str(cached.get("summary", "")) + " " + " ".join(cached.get("key_takeaways", []))
+                if "Engineered to protect users" in c_text or "Structured across modular components" in c_text:
+                    is_stale_generic = True
+            if not is_stale_generic and isinstance(cached, dict) and "summary" in cached:
                 return {
                     "document_id": str(document.id),
                     "document_filename": document.original_filename or document.filename,
@@ -64,12 +70,12 @@ class SummaryService:
                     "generated_at": cached.get("generated_at"),
                 }
 
-        # Retrieve first N chunks of the document for representative context
+        # Retrieve chunks of the document for comprehensive context across all sections
         chunk_stmt = (
             select(DocumentChunk)
             .where(DocumentChunk.document_id == document_id)
             .order_by(DocumentChunk.chunk_index)
-            .limit(10)
+            .limit(100)
         )
         chunk_res = await db.execute(chunk_stmt)
         chunks = chunk_res.scalars().all()
@@ -91,12 +97,14 @@ class SummaryService:
 
         prompt = (
             f"You are an enterprise knowledge intelligence agent. Synthesize a {mode.upper()} summary of the document below.\n\n"
-            f"GUIDELINES:\n"
-            f"1. Rely exclusively on the provided context.\n"
-            f"2. Cite supporting facts with bracketed tags like [S1], [S2] where applicable.\n"
-            f"3. Format your response into two distinct sections:\n"
+            f"STRICT SUMMARY GUIDELINES:\n"
+            f"1. Rely exclusively on authentic evidence from the provided document context.\n"
+            f"2. Cite supporting facts with bracketed tags like [S1], [S2] reflecting the actual passages that substantiate the statement.\n"
+            f"3. Do not invent implementation results, benchmark scores, completed features, or unrealistic guarantees not present in the text.\n"
+            f"4. Cover all core dimensions: Problem & Threat Landscape, Proposed Solution & Workflow, Target Audience & Beneficiaries, Technical Approach & Stack, Evaluation Criteria & Metrics, and Expected Social Impact.\n"
+            f"5. Structure your response into two distinct sections:\n"
             f"   - SUMMARY: A {mode} narrative overview of the document's core purpose and content.\n"
-            f"   - KEY_TAKEAWAYS: 3 to 5 bullet points starting with '- ' summarizing critical data points, metrics, obligations, or findings.\n\n"
+            f"   - KEY_TAKEAWAYS: {'3 to 4' if mode == 'concise' else '5 to 6'} bullet points starting with '- ' summarizing critical data points, metrics, obligations, or findings.\n\n"
             f"DOCUMENT CONTEXT:\n{context_text}"
         )
 

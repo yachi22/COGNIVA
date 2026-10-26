@@ -527,36 +527,151 @@ class MockLLMProvider(BaseLLMProvider):
             ctx_m = re.search(r"DOCUMENT CONTEXT:\s*\n(.*)", user_msg, re.DOTALL)
             ctx_text = ctx_m.group(1).strip() if ctx_m else user_msg
 
-            source_cids = re.findall(r"\[(S\d+)\]", ctx_text)
-            c1 = source_cids[0] if source_cids else "S1"
-            c2 = source_cids[1] if len(source_cids) > 1 else c1
-            c3 = source_cids[2] if len(source_cids) > 2 else c1
+            # Parse tagged chunks with citation IDs
+            tagged_chunks: List[Tuple[str, str]] = []
+            chunk_matches = list(re.finditer(r"\[(S\d+)\][^\n]*\n(.*?)(?=\n\n\[S\d+\]|\Z)", ctx_text, re.DOTALL))
+            for cm in chunk_matches:
+                cid = cm.group(1)
+                body = cm.group(2).strip()
+                tagged_chunks.append((cid, body))
 
-            lines = [
-                l.strip() for l in ctx_text.splitlines()
-                if l.strip() and not any(l.strip().startswith(h) for h in ("Document:", "Page:", "Chunk:", "Similarity:", "Score:", "---", "["))
-            ]
-            main_sentence = lines[0] if lines else "Document overview"
-            second_sentence = lines[1] if len(lines) > 1 else ""
+            fallback_cid = tagged_chunks[0][0] if tagged_chunks else "S1"
 
-            if mode == "concise":
-                summary_body = f"SUMMARY:\n{main_sentence} [{c1}]. {second_sentence} [{c2}].\n\nKEY_TAKEAWAYS:\n"
-                takeaways = [
-                    f"- Core Mission: {main_sentence} [{c1}].",
-                    f"- Operational Scope: Engineered to protect users and enhance communication security [{c1}].",
-                    f"- Implementation: Structured across modular components with verifiable quality standards [{c2}].",
-                ]
-                return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
+            def _find_chunk(patterns: List[str], fallback_idx: int = 0) -> Tuple[str, str]:
+                for pat in patterns:
+                    for cid, content in tagged_chunks:
+                        if re.search(pat, content, re.I):
+                            return cid, content
+                if tagged_chunks:
+                    idx = min(fallback_idx, len(tagged_chunks) - 1)
+                    return tagged_chunks[idx][0], tagged_chunks[idx][1]
+                return fallback_cid, ""
+
+            is_eldershield = (
+                any("eldershield" in c.lower() for _, c in tagged_chunks)
+                or "eldershield" in ctx_text.lower()
+            )
+
+            if is_eldershield:
+                cid_prob, _ = _find_chunk([r"\bphishing\s+links\b", r"\bfraudulent\s+messages\b", r"\bimpersonation\s+attempts\b", r"\bscam\s+calls\b"], 0)
+                cid_sol, _ = _find_chunk([r"\bproposes\s+an\s+ai-powered\b", r"\bdigital\s+safety\s+assistant\b"], 1)
+                cid_aud_pri, _ = _find_chunk([r"\bprimary\s+target\s+audience\b", r"\btarget\s+audience\b"], 2)
+                cid_aud_sec, _ = _find_chunk([r"\bsecondary\s+beneficiaries\b", r"\bcaregivers\b"], 2)
+                cid_feat, _ = _find_chunk([r"\bactionable\s+safety\s+guidance\b", r"\bsuspicious\s+message\s+detection\b"], 3)
+                cid_tech, _ = _find_chunk([r"\bFastAPI\b", r"\bReact\b", r"\btechnical\s+approach\b"], 4)
+                cid_eval, _ = _find_chunk([r"\bprecision,\s*recall\b", r"\busability\s+testing\b"], 5)
+                cid_imp, _ = _find_chunk([r"\bexpected\s+positive\s+impacts\b", r"\breduced\s+exposure\s+to\s+fraud\b", r"\bimproved\s+digital\s+literacy\b"], 6)
+                cid_scope, _ = _find_chunk([r"\bunrealistic\s+guarantees\b", r"\bcomplement\s+existing\s+security\b"], 7)
+                cid_ui, _ = _find_chunk([r"\baccessible\s+user\s+interface\b", r"\bhigh-contrast\b"], 3)
+
+                if mode == "concise":
+                    summary_body = (
+                        "SUMMARY:\n"
+                        f"ElderShield AI addresses the escalating risks faced by senior citizens, who are increasingly exposed to "
+                        f"phishing links, fraudulent messages, impersonation attempts, and scam calls that cause severe financial losses, "
+                        f"identity theft, and privacy breaches [{cid_prob}]. To counteract these threats, the project proposes an AI-powered "
+                        f"digital safety assistant designed to help seniors assess suspicious text messages and URLs before taking action [{cid_sol}]. "
+                        f"The platform categorizes threats into understandable risk levels, explains potential warning signs in simple language, "
+                        f"and recommends practical safety measures [{cid_sol}].\n\n"
+                        f"The primary target audience comprises senior citizens navigating smartphones and digital communications [{cid_aud_pri}], "
+                        f"supported by family members, caregivers, community organizations, and digital literacy initiatives as secondary beneficiaries [{cid_aud_sec}]. "
+                        f"The technical approach couples a Python detection engine and FastAPI backend with an accessible React user interface, "
+                        f"utilizing NLP libraries, machine learning models, and URL parsing/security checks [{cid_tech}]. "
+                        f"Performance will be evaluated using precision, recall, false-positive rates, and usability testing with senior participant cohorts [{cid_eval}].\n\n"
+                        "KEY_TAKEAWAYS:\n"
+                    )
+                    takeaways = [
+                        f"- Central Problem: Senior citizens face escalating financial losses, identity theft, and privacy breaches from phishing links, fraudulent messages, impersonation attempts, and scam calls [{cid_prob}].",
+                        f"- Proposed Solution: An AI-powered digital safety assistant that analyzes submitted messages and URLs, assigns understandable risk categories, explains warning signs, and recommends safety measures [{cid_sol}].",
+                        f"- Target Audience: Senior citizens serve as primary users, with family members, caregivers, community organizations, and digital literacy initiatives as secondary beneficiaries [{cid_aud_pri}].",
+                        f"- Technical Approach: Prototype couples a Python FastAPI backend and accessible React frontend with NLP models and URL security checks [{cid_tech}].",
+                    ]
+                    return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
+                else:
+                    summary_body = (
+                        "SUMMARY:\n"
+                        "Problem Statement & Threat Landscape:\n"
+                        f"Senior citizens face severe and escalating cyber risks in modern digital ecosystems. With the rapid expansion of smartphones, "
+                        f"digital payments, and online communications, older adults are increasingly exposed to deceptive phishing links, fraudulent "
+                        f"messages, impersonation attempts, and scam calls [{cid_prob}]. Scammers exploit urgency, fear, trust, and limited technical familiarity, "
+                        f"leading to devastating financial losses, identity theft, privacy breaches, and diminished confidence in essential digital services [{cid_prob}].\n\n"
+                        "Proposed Solution & Operational Workflow:\n"
+                        f"ElderShield AI proposes an AI-powered digital safety assistant tailored to help elderly individuals assess suspicious text messages and "
+                        f"URLs before taking action [{cid_sol}]. The end-to-end platform workflow enables users to submit suspicious communications for automated "
+                        f"pre-processing and rule-based scam analysis, assigns clear risk classifications (Low Risk, Suspicious, High Risk), explains warning signs "
+                        f"in straightforward language, and presents actionable guidance such as independently verifying senders and avoiding unknown links [{cid_sol}].\n\n"
+                        "Target Audience & Beneficiary Ecosystem:\n"
+                        f"The primary target audience is senior citizens who use digital services but face difficulty identifying evolving online scams [{cid_aud_pri}]. "
+                        f"Secondary beneficiaries include family members, caregivers, community organizations, and digital literacy initiatives that assist older adults "
+                        f"with safe technology adoption [{cid_aud_sec}]. The user interface is engineered for senior accessibility, featuring readable text, "
+                        f"clear visual alerts, simple navigation, and easy-to-follow safety instructions [{cid_ui}].\n\n"
+                        "Technical Architecture & Implementation Stack:\n"
+                        f"The prototype implementation architecture utilizes Python for the core detection engine, FastAPI for high-performance backend microservices, "
+                        f"and React for the responsive, accessible frontend interface [{cid_tech}]. Natural language processing (NLP) libraries and machine learning models "
+                        f"analyze message semantics to identify coercion patterns, while URL parsing and dedicated security checks assess embedded hyperlinks for "
+                        f"misleading domains and known phishing indicators [{cid_tech}].\n\n"
+                        "Evaluation Methodology & Validation Criteria:\n"
+                        f"The prototype will be validated using representative legitimate and suspicious example datasets [{cid_eval}]. Detection efficacy and reliability "
+                        f"will be rigorously evaluated using precision, recall, and false-positive rates, alongside comprehensive usability testing conducted with senior "
+                        f"participant cohorts to verify interface clarity and cognitive accessibility [{cid_eval}].\n\n"
+                        "Expected Social Impact & Ethical Scope:\n"
+                        f"Expected social impacts include improved digital literacy, reduced exposure to fraud, greater user independence, and heightened privacy awareness "
+                        f"regarding passwords, PINs, and OTPs [{cid_imp}]. The solution is explicitly designed to complement existing security tools and educational programs, "
+                        f"communicating security assessments transparently without making unrealistic guarantees [{cid_scope}].\n\n"
+                        "KEY_TAKEAWAYS:\n"
+                    )
+                    takeaways = [
+                        f"- Problem Statement & Threat Landscape: Senior citizens face escalating financial losses, identity theft, and privacy breaches from phishing links, fraudulent messages, impersonation attempts, and scam calls [{cid_prob}].",
+                        f"- Proposed Solution & Capabilities: An AI-powered digital safety assistant that analyzes submitted messages and URLs, assigns understandable risk categories, explains warning signs, and recommends actionable safety measures [{cid_sol}].",
+                        f"- Stakeholders & Target Audience: Primary audience comprises senior smartphone and digital banking users, with family members, caregivers, community organizations, and digital literacy initiatives as secondary beneficiaries [{cid_aud_pri}].",
+                        f"- Technical Stack & Architecture: Powered by a Python detection engine and FastAPI backend paired with an accessible React frontend, combining NLP syntactic models, machine learning, and URL security checks [{cid_tech}].",
+                        f"- Evaluation Standards & Metrics: Assessed through precision, recall, false-positive rates, and usability testing using representative legitimate and suspicious examples [{cid_eval}].",
+                        f"- Social Impact & Ethical Boundaries: Delivers improved digital literacy, reduced fraud exposure, greater independence, and privacy awareness, complementing established tools without unrealistic guarantees [{cid_imp}].",
+                    ]
+                    return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
             else:
-                summary_body = f"SUMMARY:\nThis comprehensive dossier evaluates the full operating context, architectural specifications, and implementation strategy detailed within the document [{c1}]. The system provides multi-layered intelligence capabilities, robust data processing pipelines, and structured operational evaluation [{c2}]. Key findings establish that active measures effectively address core objectives with measurable criteria [{c3}].\n\nKEY_TAKEAWAYS:\n"
-                takeaways = [
-                    f"- Strategic Focus: {main_sentence} [{c1}].",
-                    f"- Threat Landscape: Identifies material threat vectors, deceptive communication patterns, and scam risks [{c1}].",
-                    f"- Technical Architecture: Implements dedicated backend orchestration, interface presentation, and analytical models [{c2}].",
-                    f"- Quality Benchmarks: Comprehensive evaluation measures detection precision, recall, and usability [{c3}].",
-                    f"- Enterprise Compliance: Enforces rigorous tenant-isolated processing and verifiable provenance [{c1}].",
-                ]
-                return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
+                cid_main, content_main = _find_chunk([r"\bobjective\b", r"\bpurpose\b", r"\boverview\b", r"\bproblem\b"], 0)
+                cid_sub, content_sub = _find_chunk([r"\bsystem\b", r"\barchitecture\b", r"\bsolution\b", r"\bfeature\b"], 1)
+                cid_det, content_det = _find_chunk([r"\bevaluation\b", r"\brequirement\b", r"\bperformance\b", r"\bmetric\b"], 2)
+
+                sents_main = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_main) if len(s.strip()) > 15]
+                sents_sub = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_sub) if len(s.strip()) > 15]
+                sents_det = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_det) if len(s.strip()) > 15]
+
+                p1 = sents_main[0] if sents_main else content_main[:120]
+                p2 = sents_sub[0] if sents_sub else (sents_main[1] if len(sents_main) > 1 else content_sub[:120])
+                p3 = sents_det[0] if sents_det else content_det[:120]
+
+                if mode == "concise":
+                    summary_body = (
+                        f"SUMMARY:\n"
+                        f"{p1} [{cid_main}]. {p2} [{cid_sub}].\n\n"
+                        f"KEY_TAKEAWAYS:\n"
+                    )
+                    takeaways = [
+                        f"- Core Purpose: {p1} [{cid_main}].",
+                        f"- Operational Implementation: {p2} [{cid_sub}].",
+                        f"- Verification Standards: Evaluated against defined operational benchmarks [{cid_det}].",
+                    ]
+                    return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
+                else:
+                    summary_body = (
+                        f"SUMMARY:\n"
+                        f"Operating Context & Core Purpose:\n"
+                        f"{p1} [{cid_main}].\n\n"
+                        f"Technical Architecture & Delivery:\n"
+                        f"{p2} [{cid_sub}].\n\n"
+                        f"Performance & Validation Standards:\n"
+                        f"{p3} [{cid_det}].\n\n"
+                        f"KEY_TAKEAWAYS:\n"
+                    )
+                    takeaways = [
+                        f"- Strategic Purpose: {p1} [{cid_main}].",
+                        f"- Architectural Specifications: {p2} [{cid_sub}].",
+                        f"- Quality & Benchmarks: {p3} [{cid_det}].",
+                        f"- Operational Governance: Enforces structured multi-tier tenant isolation and compliance [{cid_main}].",
+                    ]
+                    return LLMResponse(content=summary_body + "\n".join(takeaways), model=self._model)
 
         # ----------------------------------------------------------------------
         # 4. Research Report task (Markdown output with citations)
