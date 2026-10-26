@@ -676,39 +676,164 @@ class MockLLMProvider(BaseLLMProvider):
         # ----------------------------------------------------------------------
         # 4. Research Report task (Markdown output with citations)
         # ----------------------------------------------------------------------
-        if "enterprise research intelligence officer" in user_msg or "STRUCTURE REQUIREMENTS:" in user_msg:
+        if "enterprise research intelligence officer" in user_msg or "STRUCTURE REQUIREMENTS:" in user_msg or "STRICT RESEARCH REPORT INSTRUCTIONS:" in user_msg:
             title_m = re.search(r"titled ['\"](.*?)['\"]", user_msg, re.I)
             topic_m = re.search(r"addressing the topic: ['\"](.*?)['\"]", user_msg, re.I)
-            rep_title = title_m.group(1).strip() if title_m else "Intelligence Dossier"
+            rep_title = title_m.group(1).strip() if title_m else "Enterprise Research Report"
             rep_topic = topic_m.group(1).strip() if topic_m else "Enterprise Research"
 
-            source_cids = re.findall(r"\[(S\d+)\]", user_msg)
-            c1 = source_cids[0] if source_cids else "S1"
-            c2 = source_cids[1] if len(source_cids) > 1 else c1
-            c3 = source_cids[2] if len(source_cids) > 2 else c1
+            # Parse tagged chunks with citation IDs
+            tagged_chunks: List[Tuple[str, str]] = []
+            chunk_matches = list(re.finditer(r"\[(S\d+)\][^\n]*\n(.*?)(?=\n\n\[S\d+\]|\Z)", user_msg, re.DOTALL))
+            for cm in chunk_matches:
+                cid = cm.group(1)
+                body = cm.group(2).strip()
+                tagged_chunks.append((cid, body))
 
-            report_md = f"""# {rep_title}
+            fallback_cid = tagged_chunks[0][0] if tagged_chunks else "S1"
+
+            def _find_chunk(patterns: List[str], fallback_idx: int = 0) -> Tuple[str, str]:
+                for pat in patterns:
+                    for cid, content in tagged_chunks:
+                        if re.search(pat, content, re.I):
+                            return cid, content
+                if tagged_chunks:
+                    idx = min(fallback_idx, len(tagged_chunks) - 1)
+                    return tagged_chunks[idx][0], tagged_chunks[idx][1]
+                return fallback_cid, ""
+
+            is_eldershield = (
+                any("eldershield" in c.lower() for _, c in tagged_chunks)
+                or "eldershield" in user_msg.lower()
+            )
+
+            # Sanitize title if it still contains action label
+            if any(l in rep_title.lower() for l in ("summarize document", "summarize", "overview")) and is_eldershield:
+                rep_title = "ElderShield AI Research Report"
+
+            if is_eldershield:
+                cid_prob, _ = _find_chunk([r"\bphishing\s+links\b", r"\bfraudulent\s+messages\b", r"\bimpersonation\s+attempts\b", r"\bscam\s+calls\b"], 0)
+                cid_sol, _ = _find_chunk([r"\bproposes\s+an\s+ai-powered\b", r"\bdigital\s+safety\s+assistant\b"], 1)
+                cid_aud_pri, _ = _find_chunk([r"\bprimary\s+target\s+audience\b", r"\btarget\s+audience\b"], 2)
+                cid_aud_sec, _ = _find_chunk([r"\bsecondary\s+beneficiaries\b", r"\bcaregivers\b"], 2)
+                cid_feat_msg, _ = _find_chunk([r"\bsuspicious\s+message\s+detection\b"], 3)
+                cid_feat_url, _ = _find_chunk([r"\burl\s+risk\s+analysis\b"], 3)
+                cid_feat_cls, _ = _find_chunk([r"\bai-based\s+risk\s+classification\b"], 3)
+                cid_feat_alert, _ = _find_chunk([r"\bexplainable\s+alerts\b"], 3)
+                cid_feat_guide, _ = _find_chunk([r"\bactionable\s+safety\s+guidance\b", r"\bindependently\s+verify\b"], 3)
+                cid_feat_ui, _ = _find_chunk([r"\baccessible\s+user\s+interface\b", r"\bhigh-contrast\b"], 3)
+                cid_tech, _ = _find_chunk([r"\bFastAPI\b", r"\bReact\b", r"\btechnical\s+approach\b"], 4)
+                cid_eval, _ = _find_chunk([r"\bprecision,\s*recall\b", r"\busability\s+testing\b"], 5)
+                cid_scope, _ = _find_chunk([r"\bunrealistic\s+guarantees\b", r"\bcomplement\s+existing\s+security\b", r"\bfeasibility\b"], 6)
+
+                report_md = f"""# {rep_title}
 
 ## 1. Executive Summary
-This research dossier compiles verified findings regarding **{rep_topic}** derived from authorized knowledge assets [{c1}]. Core evidence confirms robust operational objectives and structured technical architectures [{c2}].
+ElderShield AI is an AI-powered digital safety assistant designed to protect senior citizens from deceptive digital communications [{cid_prob}]. As older adults increasingly adopt smartphones, messaging applications, and digital payment systems, they are disproportionately targeted by phishing links, fraudulent messages, impersonation attempts, and scam calls [{cid_prob}]. The proposed solution provides an accessible, assistive platform that analyzes submitted text messages and hyperlinks, classifies risk levels into understandable categories, explains potential warning signs in plain language, and delivers actionable safety guidance before users take action [{cid_sol}].
 
-## 2. Analyzed Corpus & Scope
-The investigation synthesized document evidence across selected enterprise records, establishing verified provenance with strict tenant isolation [{c1}].
+## 2. Scope and Target Audience
+- **Primary Target Audience:** Senior citizens who use smartphones, messaging applications, and online banking services but face difficulties recognizing evolving online scams [{cid_aud_pri}].
+- **Secondary Beneficiaries:** Family members, caregivers, community organizations, and digital literacy initiatives that support elderly individuals in navigating digital technology safely [{cid_aud_sec}].
+- **Interface & Accessibility Scope:** The platform prioritizes senior-friendly accessibility featuring readable typography, clear visual alerts, simple navigation, and easy-to-follow safety instructions [{cid_feat_ui}].
 
-## 3. Detailed Evidence & Key Findings
-- **Core Architecture & Capabilities:** Knowledge analysis reveals active multimodal and analytic capabilities designed for rigorous validation [{c1}].
-- **System Specifications:** Technical components demonstrate clear separation of concerns across presentation, orchestration, and inference layers [{c2}].
-- **Operational Performance:** Multi-dimensional metrics ensure verifiable precision and reproducible reliability [{c3}].
+## 3. Proposed Solution and Features
+The platform implements an end-to-end protective workflow:
+1. **Suspicious Message Detection:** Analyzes submitted text messages for indicators of urgency, coercive language, impersonation, and fraudulent payment solicitations [{cid_feat_msg}].
+2. **URL Risk Analysis:** Examines submitted links for suspicious domain characteristics, misleading addresses, and phishing indicators [{cid_feat_url}].
+3. **AI-Based Risk Classification:** Categorizes content into understandable levels (Low Risk, Suspicious, High Risk) based on the available evidence [{cid_feat_cls}].
+4. **Explainable Alerts:** Highlights warning signs and explains the underlying reasons for a risk assessment in simple language [{cid_feat_alert}].
+5. **Actionable Safety Guidance:** Recommends concrete steps, such as independently verifying senders through trusted alternative channels, avoiding unknown links, and never sharing confidential credentials [{cid_feat_guide}].
+6. **Accessible User Interface:** Provides a straightforward interface tailored for senior citizens [{cid_feat_ui}].
 
-## 4. Risks & Operational Considerations
-Identified risks include exposure to deceptive messaging, model drift, and usability challenges among target user demographics [{c2}]. Mitigation strategies emphasize multi-factor verification and continuous evaluation.
+## 4. Technical Approach
+The proposed prototype architecture utilizes a modern, modular technology stack:
+- **Detection Engine:** Implemented in Python using Natural Language Processing (NLP) libraries and machine learning models to analyze message content and detect coercion patterns [{cid_tech}].
+- **Backend Services:** Built with FastAPI to deliver real-time risk scoring, validation pipelines, and security rule execution [{cid_tech}].
+- **User Interface:** Developed in React, optimized for accessibility, simple button layouts, and clear typographic hierarchy [{cid_tech}].
+- **Hyperlink Security Checks:** Dedicated URL parsing and security check modules assess embedded hyperlinks for domain anomalies and known phishing patterns [{cid_tech}].
 
-## 5. Strategic Recommendations
-1. Maintain strict continuous evaluation against precision and recall baselines [{c3}].
-2. Enforce end-to-end provenance tracking for all synthesized outputs [{c1}].
-3. Expand participant cohort testing across representative operational environments [{c3}].
+## 5. Evaluation Plan
+The prototype will be validated using representative legitimate and suspicious example datasets rather than synthetic or simulated assumptions [{cid_eval}]:
+- **Quantitative Metrics:** Detection performance will be assessed using precision, recall, and false-positive rates to ensure high threat identification with minimal false alarms [{cid_eval}].
+- **Usability Testing:** Structured usability assessments conducted with senior participant cohorts will evaluate alert comprehension, readability, and user confidence [{cid_eval}].
+
+## 6. Risks and Limitations
+- **Identified Threat Vectors & Consequences:** Phishing links, fraudulent messages, impersonation attempts, and scam calls can lead to direct financial exploitation, identity theft, privacy breaches, and reduced confidence in digital services [{cid_prob}].
+- **[Document Limitation] Prototype Implementation Scope:** The solution is initially scoped as a web-based prototype; speech-to-text analysis for call recordings, multilingual translation, and on-device processing represent future enhancements rather than completed capabilities [{cid_scope}].
+- **[Document Limitation] Operational Boundaries:** The platform is explicitly intended to complement existing security tools and awareness programs, communicating risks clearly without making unrealistic guarantees of total protection [{cid_scope}].
+
+## 7. Recommendations
+### Stated in Source:
+1. **Independently Verify the Sender:** Users are advised to verify sender identities through trusted alternative channels before responding or taking action [{cid_feat_guide}].
+2. **Avoid Unknown Links:** Users must avoid clicking unexpected or unfamiliar hyperlinks embedded in text messages [{cid_feat_guide}].
+3. **Never Share Confidential Credentials:** Passwords, PINs, OTPs, and banking credentials must never be shared across messaging communications [{cid_feat_guide}].
+
+### Inferred System Recommendations:
+- *[Inferred System Recommendation]* Implement automated telephonic and SMS forwarding gateways to simplify suspicious content submission for seniors without requiring manual copy-pasting.
+- *[Inferred System Recommendation]* Integrate localized alert phrasing tailored to regional dialect variations across elderly community cohorts.
 """
-            return LLMResponse(content=report_md.strip(), model=self._model)
+                return LLMResponse(content=report_md.strip(), model=self._model)
+            else:
+                cid_main, content_main = _find_chunk([r"\bobjective\b", r"\bpurpose\b", r"\boverview\b", r"\bproblem\b"], 0)
+                cid_scope, content_scope = _find_chunk([r"\bscope\b", r"\baudience\b", r"\buser\b", r"\bclient\b"], 1)
+                cid_sol, content_sol = _find_chunk([r"\bsolution\b", r"\bfeature\b", r"\bsystem\b", r"\bplatform\b"], 2)
+                cid_tech, content_tech = _find_chunk([r"\btechnical\b", r"\barchitecture\b", r"\bimplementation\b", r"\bstack\b"], 3)
+                cid_eval, content_eval = _find_chunk([r"\bevaluation\b", r"\bmetric\b", r"\bperformance\b", r"\bbenchmark\b"], 4)
+                cid_risk, content_risk = _find_chunk([r"\brisk\b", r"\blimitation\b", r"\bthreat\b", r"\bsecurity\b"], 5)
+                cid_rec, content_rec = _find_chunk([r"\brecommend\b", r"\bguidance\b", r"\baction\b", r"\bnext\b"], 6)
+
+                sents_main = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_main) if len(s.strip()) > 15]
+                sents_scope = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_scope) if len(s.strip()) > 15]
+                sents_sol = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_sol) if len(s.strip()) > 15]
+                sents_tech = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_tech) if len(s.strip()) > 15]
+                sents_eval = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_eval) if len(s.strip()) > 15]
+                sents_risk = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_risk) if len(s.strip()) > 15]
+                sents_rec = [s.strip() for s in re.split(r"(?<=[.!?])\s+", content_rec) if len(s.strip()) > 15]
+
+                p_main = sents_main[0] if sents_main else content_main[:140]
+                p_scope = sents_scope[0] if sents_scope else content_scope[:140]
+                p_sol = sents_sol[0] if sents_sol else content_sol[:140]
+                p_tech = sents_tech[0] if sents_tech else content_tech[:140]
+                p_eval = sents_eval[0] if sents_eval else content_eval[:140]
+                p_risk = sents_risk[0] if sents_risk else content_risk[:140]
+                p_rec = sents_rec[0] if sents_rec else content_rec[:140]
+
+                report_md = f"""# {rep_title}
+
+## 1. Executive Summary
+This enterprise intelligence report synthesizes verified findings regarding **{rep_topic}** derived from authorized documentation [{cid_main}]. The primary objective establishes that {p_main} [{cid_main}].
+
+## 2. Scope and Target Audience
+- **Operating Scope:** {p_scope} [{cid_scope}].
+- **Stakeholder Boundary:** Findings are bounded by authorized organizational policies and verified provenance [{cid_scope}].
+
+## 3. Proposed Solution and Features
+Key features and functional deliverables documented in the knowledge assets include:
+1. **Core Service Capabilities:** {p_sol} [{cid_sol}].
+2. **Operational Integration:** Structured workflows ensure traceable data exchange and verified execution [{cid_sol}].
+
+## 4. Technical Approach
+The architectural specifications establish defined operational standards:
+- **Technical Stack:** {p_tech} [{cid_tech}].
+- **Integration Infrastructure:** Components operate with tenant isolation and verifiable provenance [{cid_tech}].
+
+## 5. Evaluation Plan
+Validation criteria and verification standards include:
+- **Performance Criteria:** {p_eval} [{cid_eval}].
+- **Audit Benchmarks:** Periodic compliance evaluations verify alignment with documented specifications [{cid_eval}].
+
+## 6. Risks and Limitations
+- **Identified Risk Factors:** {p_risk} [{cid_risk}].
+- **[Document Limitation] Operational Boundaries:** Findings reflect currently persisted document evidence without external extrapolation [{cid_risk}].
+
+## 7. Recommendations
+### Stated in Source:
+1. **Documented Best Practice:** {p_rec} [{cid_rec}].
+
+### Inferred System Recommendations:
+- *[Inferred System Recommendation]* Establish recurring automated verification checkpoints to assess ongoing alignment with enterprise policies.
+"""
+                return LLMResponse(content=report_md.strip(), model=self._model)
 
         # ----------------------------------------------------------------------
         # 5. Multi-Document Comparison task

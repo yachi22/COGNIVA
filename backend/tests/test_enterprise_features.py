@@ -4,7 +4,7 @@ import uuid
 from pathlib import Path
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 
 from app.models.document import Document
 from app.models.chunk import DocumentChunk
@@ -1117,3 +1117,254 @@ async def test_summary_stale_boilerplate_invalidation():
 
     assert "Engineered to protect users" not in res["summary"]
     assert "Structured across modular components" not in " ".join(res["key_takeaways"])
+
+
+# 24. ElderShield AI Research Report Grounding and Title Derivation Test
+@pytest.mark.asyncio
+async def test_eldershield_research_report_grounding():
+    from app.services.report_service import ReportService
+
+    report_svc = ReportService()
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.status = "processed"
+    mock_doc.filename = "ElderShield AI.docx"
+    mock_doc.original_filename = "ElderShield AI.docx"
+
+    # Full set of chunks matching ElderShield AI structure
+    c_prob = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=5, page_number=None)
+    c_prob.content = (
+        "With the increasing use of smartphones, digital payments, and online communication, senior citizens are becoming "
+        "more exposed to phishing links, fraudulent messages, impersonation attempts, and scam calls. Many elderly people find "
+        "it difficult to identify these threats, which can lead to financial losses, identity theft, privacy breaches, and reduced confidence in digital services."
+    )
+
+    c_sol = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=6, page_number=None)
+    c_sol.content = (
+        "ElderShield AI proposes an AI-powered digital safety assistant that helps users assess suspicious communications before taking action. "
+        "The platform will analyze submitted text messages and URLs using Natural Language Processing (NLP), machine learning techniques, and URL security checks. "
+        "It will identify potential warning signs, assign a risk category, explain why the content may be suspicious, and recommend appropriate safety measures in simple language."
+    )
+
+    c_aud_pri = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=9, page_number=None)
+    c_aud_pri.content = (
+        "The primary target audience is senior citizens who use smartphones, messaging applications, online banking, and other digital services but may have difficulty recognizing evolving online scams."
+    )
+
+    c_aud_sec = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=10, page_number=None)
+    c_aud_sec.content = (
+        "Secondary beneficiaries include family members, caregivers, community organizations, and digital literacy initiatives that support elderly people in using technology safely."
+    )
+
+    c_feat1 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=22, page_number=None)
+    c_feat1.content = "Suspicious Message Detection: The assistant analyzes submitted text messages for indicators of urgency, coercive language, impersonation, and fraudulent payment solicitations."
+
+    c_feat2 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=23, page_number=None)
+    c_feat2.content = "URL Risk Analysis: Examines submitted links for suspicious domain characteristics, misleading addresses, and phishing indicators."
+
+    c_feat3 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=24, page_number=None)
+    c_feat3.content = "AI-Based Risk Classification: Categorizes content into understandable levels (Low Risk, Suspicious, High Risk) based on the available evidence."
+
+    c_feat4 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=25, page_number=None)
+    c_feat4.content = "Explainable Alerts: Highlights warning signs and explains the underlying reasons for a risk assessment in simple language."
+
+    c_feat5 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=26, page_number=None)
+    c_feat5.content = "Actionable Safety Guidance: Recommends concrete steps, such as independently verifying senders through trusted alternative channels, avoiding unknown links, and never sharing confidential credentials."
+
+    c_feat6 = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=27, page_number=None)
+    c_feat6.content = "Accessible User Interface: Provides a straightforward interface tailored for senior citizens, featuring readable typography, clear visual alerts, and simple navigation."
+
+    c_tech = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=29, page_number=None)
+    c_tech.content = (
+        "The proposed prototype will use Python for the detection engine, FastAPI for backend services, and React for the user interface. "
+        "NLP libraries and machine learning models will analyze message content, while URL parsing and security checks will assess suspicious links."
+    )
+
+    c_eval = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=36, page_number=None)
+    c_eval.content = (
+        "The prototype will be evaluated using representative legitimate and suspicious examples. Performance will be assessed using precision, recall, false-positive rates, and usability testing with senior participant cohorts."
+    )
+
+    c_scope = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=42, page_number=None)
+    c_scope.content = (
+        "The project is initially scoped as a web-based prototype to validate core functionality and user experience. "
+        "The platform is intended to complement existing security tools and awareness programs, communicating risks clearly without making unrealistic guarantees."
+    )
+
+    mock_db = AsyncMock()
+    doc_res = MagicMock()
+    doc_res.scalars.return_value.all.return_value = [mock_doc]
+
+    chunk_res = MagicMock()
+    chunk_res.scalars.return_value.all.return_value = [
+        c_prob, c_sol, c_aud_pri, c_aud_sec,
+        c_feat1, c_feat2, c_feat3, c_feat4, c_feat5, c_feat6,
+        c_tech, c_eval, c_scope
+    ]
+
+    mock_db.execute.side_effect = [doc_res, chunk_res]
+
+    # Test report generation when user provides generic action label "Summarize Document"
+    res = await report_svc.generate_report(
+        db=mock_db,
+        user_id=user_id,
+        topic="Summarize Document",
+        title=None,
+        document_ids=[doc_id],
+    )
+
+    # 1. Title and identity assertions:
+    assert res["title"] == "ElderShield AI Research Report"
+    assert "Summarize Document" not in res["title"]
+    assert "Intelligence Report: Summarize Document" != res["title"]
+    assert "ElderShield AI" in res["topic"]
+
+    md = res["content_markdown"]
+
+    # 2. Section structure assertions (7 mandatory sections):
+    assert "## 1. Executive Summary" in md
+    assert "## 2. Scope and Target Audience" in md
+    assert "## 3. Proposed Solution and Features" in md
+    assert "## 4. Technical Approach" in md
+    assert "## 5. Evaluation Plan" in md
+    assert "## 6. Risks and Limitations" in md
+    assert "## 7. Recommendations" in md
+
+    # 3. Grounded technical approach assertions:
+    assert "Python" in md
+    assert "FastAPI" in md
+    assert "React" in md
+    assert "NLP" in md or "Natural Language Processing" in md
+    assert "machine learning models" in md.lower()
+    assert "url parsing" in md.lower() or "security checks" in md.lower()
+
+    # 4. Grounded target audience assertions:
+    assert "senior citizens" in md.lower()
+    assert "caregivers" in md.lower()
+    assert "family members" in md.lower()
+    assert "community organizations" in md.lower()
+    assert "digital literacy initiatives" in md.lower()
+
+    # 5. Grounded features assertions:
+    assert "suspicious message detection" in md.lower()
+    assert "url risk analysis" in md.lower()
+    assert "risk classification" in md.lower()
+    assert "explainable alerts" in md.lower()
+    assert "actionable safety guidance" in md.lower()
+    assert "accessible user interface" in md.lower()
+
+    # 6. Evaluation plan assertions:
+    assert "precision" in md.lower()
+    assert "recall" in md.lower()
+    assert "false-positive" in md.lower()
+    assert "usability testing" in md.lower()
+    assert "representative legitimate and suspicious" in md.lower()
+
+    # 7. Explicitly labeled limitations & inferred recommendations:
+    assert "[Document Limitation]" in md
+    assert "[Inferred System Recommendation]" in md
+    assert "Stated in Source:" in md
+    assert "Inferred System Recommendations:" in md
+
+    # 8. Negative checks against ungrounded enterprise boilerplate:
+    assert "multimodal capabilities" not in md.lower()
+    assert "model drift" not in md.lower()
+    assert "multi-factor verification" not in md.lower()
+    assert "system separation of concerns" not in md.lower()
+
+    # 9. Citations and Source Manifest integrity:
+    assert len(res["sources"]) == 13
+    for src in res["sources"]:
+        assert src["filename"] == "ElderShield AI.docx"
+        assert src["document_filename"] == "ElderShield AI.docx"
+        assert "chunk_id" in src
+        assert "chunk_index" in src
+        assert "excerpt" in src and len(src["excerpt"]) > 0
+
+    # Ensure citations [S#] exist in the report markdown
+    assert "[S" in md
+
+
+# 25. Research Report Retrieval at Document End Test
+@pytest.mark.asyncio
+async def test_research_report_retrieval_at_document_end():
+    from app.services.report_service import ReportService
+
+    report_svc = ReportService()
+    user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_doc = MagicMock(spec=Document)
+    mock_doc.id = doc_id
+    mock_doc.user_id = user_id
+    mock_doc.status = "processed"
+    mock_doc.filename = "Long_Document.pdf"
+    mock_doc.original_filename = "Long_Document.pdf"
+
+    # Create 45 mock chunks where key evaluation data is at chunk 40
+    chunks = []
+    for i in range(45):
+        c = MagicMock(spec=DocumentChunk, id=uuid.uuid4(), document_id=doc_id, chunk_index=i, page_number=i + 1)
+        if i == 40:
+            c.content = "Evaluation Benchmarks: Target latency under 150ms with 99.5% accuracy achieved in final validation trials."
+        elif i == 0:
+            c.content = "Project Alpha overview and introductory background."
+        else:
+            c.content = f"Intermediary technical documentation paragraph {i} providing system specifications."
+        chunks.append(c)
+
+    mock_db = AsyncMock()
+    doc_res = MagicMock()
+    doc_res.scalars.return_value.all.return_value = [mock_doc]
+
+    chunk_res = MagicMock()
+    chunk_res.scalars.return_value.all.return_value = chunks
+
+    mock_db.execute.side_effect = [doc_res, chunk_res]
+
+    res = await report_svc.generate_report(
+        db=mock_db,
+        user_id=user_id,
+        topic="Evaluate Alpha System",
+        document_ids=[doc_id],
+    )
+
+    # All 45 chunks were retrieved (retrieval limit is 100 for single doc, not 5)
+    assert len(res["sources"]) == 45
+    # The chunk at index 40 is present in the source manifest
+    chunk_indices = [s["chunk_index"] for s in res["sources"]]
+    assert 40 in chunk_indices
+    assert any("latency under 150ms" in s["excerpt"] for s in res["sources"])
+
+
+# 26. Research Report Tenant Isolation Test
+@pytest.mark.asyncio
+async def test_research_report_tenant_isolation():
+    from app.services.report_service import ReportService
+
+    report_svc = ReportService()
+    owner_user_id = uuid.uuid4()
+    attacker_user_id = uuid.uuid4()
+    doc_id = uuid.uuid4()
+
+    mock_db = AsyncMock()
+    # Query for document belonging to attacker_user_id returns empty
+    doc_res = MagicMock()
+    doc_res.scalars.return_value.all.return_value = []
+    mock_db.execute.return_value = doc_res
+
+    with pytest.raises(HTTPException) as exc_info:
+        await report_svc.generate_report(
+            db=mock_db,
+            user_id=attacker_user_id,
+            topic="Steal confidential data",
+            document_ids=[doc_id],
+        )
+
+    assert exc_info.value.status_code == status.HTTP_404_NOT_FOUND
+    assert "access denied" in exc_info.value.detail.lower() or "not found" in exc_info.value.detail.lower()
+
