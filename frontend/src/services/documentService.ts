@@ -88,6 +88,25 @@ export const documentService = {
     const response = await apiClient.get<DocumentChunkDetail>(`/documents/${documentId}/chunks/${chunkId}`);
     return response.data;
   },
+
+  /**
+   * Download authentic original document binary.
+   */
+  async downloadDocument(id: string, filename: string): Promise<void> {
+    const response = await apiClient.get(`/documents/${id}/download?redirect=false`, {
+      responseType: "blob",
+    });
+    const blob = new Blob([response.data]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export default documentService;
+

@@ -20,11 +20,13 @@ import {
   GitCompare,
   FolderPlus,
   BookOpen,
+  Download,
 } from "lucide-react";
 import Button from "../common/Button";
 import EmptyState from "../common/EmptyState";
 import Badge from "../common/Badge";
 import { DocumentItem, ExtractedDocument } from "../../types/document";
+import { documentService } from "../../services/documentService";
 import SummaryModal from "./SummaryModal";
 import StructuredExtractModal from "./StructuredExtractModal";
 import ComparisonModal from "./ComparisonModal";
@@ -56,6 +58,18 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   const [searchTerm, setSearchTerm] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  const handleDownload = async (doc: DocumentItem) => {
+    setDownloadingId(doc.id);
+    try {
+      await documentService.downloadDocument(doc.id, doc.original_filename || doc.filename);
+    } catch (err) {
+      console.error("Failed to download document:", err);
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   // Multi-selection state
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
@@ -482,6 +496,18 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
                                 <Eye className="w-3.5 h-3.5 text-secondary" />
                               </button>
                             )}
+                            <button
+                              onClick={() => handleDownload(doc)}
+                              disabled={downloadingId === doc.id}
+                              className="p-1.5 rounded border border-border bg-surface hover:bg-panel text-primary transition-colors cursor-pointer"
+                              title="Download authentic original binary"
+                            >
+                              {downloadingId === doc.id ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-accent" />
+                              ) : (
+                                <Download className="w-3.5 h-3.5 text-secondary" />
+                              )}
+                            </button>
                           </>
                         )}
 

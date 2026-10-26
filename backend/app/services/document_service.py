@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.models.document import Document
 from app.models.chunk import DocumentChunk
 from app.models.user import User
-from app.services.storage_service import storage_service
+from app.services.storage import storage_service, StorageObjectNotFoundError
 from app.services.documents.extractor import document_extractor, ExtractedDocument, ExtractedUnit, ExtractionError
 from app.services.documents.chunker import document_chunker, ChunkData
 from app.services.embeddings import (
@@ -41,14 +41,15 @@ class DocumentService:
         Validates, saves to disk, and persists a Document record in PostgreSQL.
         Optionally executes immediate synchronous text extraction and embedding.
         """
-        # Save file securely to user-isolated directory
+        # Save file securely to user-isolated directory and durable object storage
+        doc_id = uuid.uuid4()
         stored_filename, original_name, file_type, total_bytes, relative_path, metadata = (
-            await storage_service.save_uploaded_file(file=file, user_id=user.id)
+            await storage_service.save_uploaded_file(file=file, user_id=user.id, document_id=doc_id)
         )
 
         try:
             document = Document(
-                id=uuid.uuid4(),
+                id=doc_id,
                 user_id=user.id,
                 filename=stored_filename,
                 original_filename=original_name,
@@ -62,7 +63,7 @@ class DocumentService:
             await db.refresh(document)
         except Exception:
             # If database persistence fails, purge the saved file to avoid orphaned storage
-            storage_service.delete_stored_file(user.id, relative_path)
+            await storage_service.delete_document_completely(user.id, relative_path, metadata)
             await db.rollback()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -98,6 +99,20 @@ class DocumentService:
         await db.refresh(document)
 
         full_file_path = storage_service.get_full_path(document.storage_path)
+        if not full_file_path.exists() or not full_file_path.is_file():
+            # Ephemeral container restart: restore from durable storage provider into local user cache
+            try:
+                binary_bytes = await storage_service.get_document_bytes(
+                    user_id=user_id,
+                    storage_path=document.storage_path,
+                    metadata_=document.metadata_,
+                )
+                user_dir = storage_service.get_user_storage_dir(user_id)
+                full_file_path = user_dir / document.filename
+                with open(full_file_path, "wb") as f:
+                    f.write(binary_bytes)
+            except Exception as e:
+                logger.warning(f"Could not restore binary from durable storage for doc {document.id}: {e}")
 
         try:
             # 2. Execute extraction
@@ -347,20 +362,64 @@ class DocumentService:
         document_id: uuid.UUID
     ) -> bool:
         """
-        Deletes a document from both disk storage (including extracted artifacts) and database.
+        Deletes a document from both durable cloud storage, local disk, and database.
         Strictly enforces tenant ownership.
         """
         document = await self.get_user_document(db=db, user_id=user_id, document_id=document_id)
 
-        # Remove physical file and any extracted JSON from disk
-        storage_service.delete_stored_file(user_id, document.storage_path)
+        # Remove physical file and any extracted JSON from disk and durable object storage
+        await storage_service.delete_document_completely(
+            user_id=user_id,
+            storage_path=document.storage_path,
+            metadata_=document.metadata_,
+        )
 
         # Delete database record
         await db.delete(document)
         await db.commit()
         return True
 
+    async def get_document_download(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+        document_id: uuid.UUID,
+    ) -> Tuple[bytes, str, str, Optional[str]]:
+        """
+        Retrieves authentic document binary and optional presigned download URL.
+        Enforces tenant isolation.
+        Returns:
+            Tuple of (binary_bytes, original_filename, content_type, presigned_url)
+        """
+        document = await self.get_user_document(db=db, user_id=user_id, document_id=document_id)
+        meta = dict(document.metadata_ or {})
+        content_type = meta.get("content_type", f"application/{document.file_type}")
+        original_name = document.original_filename or document.filename
+
+        # Generate presigned URL if durable S3/R2 provider is active
+        presigned_url = await storage_service.generate_download_url(
+            user_id=user_id,
+            storage_path=document.storage_path,
+            original_filename=original_name,
+            metadata_=meta,
+        )
+
+        # Retrieve bytes (from local cache or fetched from S3)
+        try:
+            binary_bytes = await storage_service.get_document_bytes(
+                user_id=user_id,
+                storage_path=document.storage_path,
+                metadata_=meta,
+            )
+        except StorageObjectNotFoundError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Original document binary is not available. (File was not durably stored before ephemeral container reset)."
+            )
+
+        return binary_bytes, original_name, content_type, presigned_url
 
 
 # Singleton instance
 document_service = DocumentService()
+

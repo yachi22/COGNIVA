@@ -58,6 +58,7 @@ lerna-debug.log*
 Thumbs.db
 
 # Storage & Uploaded Documents
-storage/
-backend/storage/
+/storage/
+/backend/storage/
+!backend/app/services/storage/
 *.sqlite3

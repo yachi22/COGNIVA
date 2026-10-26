@@ -1,6 +1,7 @@
 import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from fastapi.responses import Response, RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -227,3 +228,65 @@ async def delete_document(
         message="Document deleted successfully.",
         id=document_id,
     )
+
+
+@router.get(
+    "/{document_id}/download",
+    summary="Download authentic original document binary",
+    description="Securely downloads the authentic uploaded document binary. Enforces tenant isolation. Redirects to short-lived presigned URL if durable S3/R2 storage is enabled and redirect=True.",
+)
+async def download_document(
+    document_id: uuid.UUID,
+    redirect: bool = Query(True, description="Redirect to presigned S3/R2 URL if available"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    binary_bytes, original_name, content_type, presigned_url = (
+        await document_service.get_document_download(
+            db=db,
+            user_id=current_user.id,
+            document_id=document_id,
+        )
+    )
+
+    if redirect and presigned_url:
+        return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    safe_name = original_name.replace('"', "")
+    return Response(
+        content=binary_bytes,
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{safe_name}"',
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        },
+    )
+
+
+@router.get(
+    "/{document_id}/download-url",
+    summary="Get presigned download URL or authenticated download path",
+    description="Returns signed object URL or secure endpoint route for downloading the document.",
+)
+async def get_download_url(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    binary_bytes, original_name, content_type, presigned_url = (
+        await document_service.get_document_download(
+            db=db,
+            user_id=current_user.id,
+            document_id=document_id,
+        )
+    )
+
+    return {
+        "document_id": str(document_id),
+        "filename": original_name,
+        "content_type": content_type,
+        "download_url": presigned_url or f"/api/v1/documents/{document_id}/download",
+        "is_presigned": presigned_url is not None,
+        "expires_in_seconds": 900 if presigned_url else None,
+    }
+

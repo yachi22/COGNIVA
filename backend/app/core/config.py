@@ -43,9 +43,20 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # Storage and Document Upload Configuration
+    STORAGE_PROVIDER: str = "local"  # "local", "s3", or "r2"
     STORAGE_DIR: str = "storage"
     MAX_UPLOAD_SIZE_MB: int = 50
     ALLOWED_EXTENSIONS: List[str] = ["pdf", "docx", "csv"]
+
+    # S3 / Cloudflare R2 / MinIO Object Storage Configuration
+    S3_BUCKET_NAME: Optional[str] = None
+    S3_ENDPOINT_URL: Optional[str] = None  # e.g. "https://<accountid>.r2.cloudflarestorage.com"
+    S3_REGION_NAME: str = "us-east-1"
+    S3_ACCESS_KEY_ID: Optional[str] = None
+    S3_SECRET_ACCESS_KEY: Optional[str] = None
+    S3_SIGNED_URL_EXPIRATION_SECONDS: int = 900  # 15 minutes
+    S3_PREFIX: str = "cogniva"
+
 
     # Document Chunking Configuration
     CHUNK_SIZE: int = 1000
