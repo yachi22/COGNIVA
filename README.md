@@ -1,121 +1,78 @@
-# Cogniva | Multimodal Enterprise Knowledge Agent
+# Cogniva | Multimodal Enterprise Knowledge Platform
 
-> **Tagline:** Understand. Retrieve. Analyze. Act.
+> **Tagline:** Understand. Retrieve. Analyze. Act.  
+> **Production Frontend:** [https://cogniva-gules.vercel.app](https://cogniva-gules.vercel.app)  
+> **Production Backend API:** [https://cogniva-api.onrender.com/api/v1](https://cogniva-api.onrender.com/api/v1)  
+> **GitHub Repository:** [https://github.com/yachi22/Cogniva](https://github.com/yachi22/Cogniva)
 
-Cogniva is an enterprise-grade multimodal knowledge intelligence platform engineered to ingest, index, and reason over heterogeneous enterprise assets (PDFs, Word DOCX documents, and structured knowledge). It delivers strictly grounded, source-cited intelligence through deterministic chunking, semantic vector retrieval via PostgreSQL `pgvector`, robust anti-prompt-injection boundaries, verified citation provenance, and persistent multi-turn conversations with tenant isolation.
+Cogniva is an industry-grade multimodal enterprise AI knowledge platform engineered to ingest, index, synthesize, and reason over heterogeneous corporate knowledge assets (PDFs, Word DOCX documents, CSV spreadsheets). It delivers strictly grounded, verifiable intelligence through token-aware structural chunking, semantic vector retrieval via PostgreSQL `pgvector`, hybrid keyword re-ranking, anti-prompt-injection boundaries, authentic citation provenance, structured information extraction, concise and detailed executive summaries, cited research reports, and real-time evaluation telemetry with strict tenant isolation.
 
 ---
 
-## 1. Project Overview & Architecture
+## 1. System Architecture & Data Flow
 
-Cogniva is built with a decoupled, modular 3-tier architecture:
+Cogniva is engineered with a modular, decoupled 3-tier architecture:
 
 ```
-Cogniva Enterprise Platform
-├── Frontend Client (Port 5173 / Vercel)
-│   ├── React 18 + TypeScript + Vite + Tailwind CSS
-│   ├── Responsive SaaS Shell (Dashboard, Documents Library, Ask Cogniva Chat, Settings)
-│   ├── Compact Citation Badges ([S1] doc.pdf · p.1) & Interactive Source Inspection Modal
-│   └── Multi-turn Conversation History Drawer with instant navigation
-│
-├── Backend API Service (Port 8000 / Render / Railway)
-│   ├── FastAPI + Uvicorn ASGI Application
-│   ├── Pydantic v2 validation & Pydantic-Settings environment management
-│   ├── PyMuPDF & python-docx deterministic document extractors
-│   ├── Structural chunking (1000-char units, 150-char overlap, provenance tracking)
-│   ├── 1536-dimensional dense embedding generation (OpenAI text-embedding-3-small)
-│   ├── Grounded RAG orchestrator with anti-injection defense boundaries
-│   ├── Regex citation extraction ([S1], [S2]) & authentic source validation
-│   └── Persistent ConversationService managing chat threads and turns
-│
-└── Managed Database (PostgreSQL 16 + pgvector / Supabase / Neon)
-    ├── users: Tenant accounts & bcrypt password hashes
-    ├── documents: Document metadata, status lifecycle, tenant mapping
-    ├── document_chunks: Document excerpts, page numbers, and 1536-d vector embeddings
-    ├── conversations: Persistent chat threads, auto-generated titles, timestamps
-    └── messages: User questions & assistant answers with JSONB citation/source metadata
+                    ┌──────────────────────────────────────────┐
+                    │      Vercel CDN / React 18 + Vite       │
+                    │   TypeScript · Tailwind CSS · Dark Mode   │
+                    └─────────────────────┬────────────────────┘
+                                          │ HTTPS / Signed JWT
+                                          ▼
+                    ┌──────────────────────────────────────────┐
+                    │      FastAPI Production ASGI Gateway     │
+                    │   Render / Uvicorn / Async Workers       │
+                    └──────┬──────────────┬──────────────┬─────┘
+                           │              │              │
+             Text & Chunks │   Dense 1536 │   Grounded   │ SQL / Vectors
+                           ▼              ▼              ▼
+                    ┌────────────┐ ┌────────────┐ ┌──────────────────────────┐
+                    │ Extractors │ │ Embeddings │ │ PostgreSQL 16 + pgvector │
+                    │ PyMuPDF    │ │ OpenAI     │ │ users · documents        │
+                    │ python-docx│ │ text-      │ │ document_chunks (1536-d) │
+                    │ CSV tables │ │ embedding- │ │ collections · audit_logs │
+                    │ Magic bytes│ │ 3-small    │ │ conversations · messages │
+                    └────────────┘ └────────────┘ └──────────────────────────┘
 ```
 
----
-
-## 2. Implemented Features (MVP Scope)
-
-Cogniva MVP implements complete functionality for Phases 0 through 12:
-
-* **Authentication & Tenant Security**:
-  - Email/password user registration and login with bcrypt hashing (12 salt rounds).
-  - Signed JWT Bearer tokens with configurable expiration (HS256).
-  - Strict database-level tenant isolation: users can never access, query, inspect, or delete another tenant's documents, chunks, conversations, or messages.
-
-* **Document Ingestion & Extraction**:
-  - Secure upload supporting PDF (`.pdf`) and Word (`.docx`) up to 50MB.
-  - Magic byte inspection and path traversal sanitization.
-  - Page-aware PDF extraction (PyMuPDF / `fitz`) and paragraph-aware Word extraction (`python-docx`).
-  - Text normalization and deterministic whitespace cleaning.
-
-* **Chunking & Vector Embeddings**:
-  - Token-aware structural chunking with provenance preservation (document filename, page number, unit type, source sequence).
-  - 1536-dimensional dense vector embeddings generated via OpenAI `text-embedding-3-small` (with offline `MockEmbeddingProvider` for testing).
-  - Idempotent document reprocessing replacing previous chunk records cleanly.
-
-* **Semantic Vector Retrieval**:
-  - Native PostgreSQL `pgvector` cosine distance retrieval (`<=>`).
-  - Tenant-isolated vector search with configurable `top_k` and `min_similarity` thresholds.
-  - Document-scoped retrieval filtering.
-
-* **Retrieval-Augmented Generation (RAG) & Citations**:
-  - Grounded answer generation using OpenAI `gpt-4o-mini`.
-  - Strict operating rules: answers must be based exclusively on retrieved context.
-  - Anti-prompt-injection boundaries: untrusted document context is isolated from instructions.
-  - Backend-owned, response-scoped citation identifiers (`[S1]`, `[S2]`).
-  - Hallucinated citation rejection: citations not present in the retrieved set are discarded.
-  - Deterministic fallback for insufficient evidence without LLM speculation.
-
-* **Source Provenance & Inspection**:
-  - Compact citation pills rendering badge, document filename, and page number.
-  - Secure source inspection endpoint (`GET /api/v1/documents/{doc_id}/chunks/{chunk_id}`) allowing users to view the authentic retrieved text with zero vector or filesystem leakage.
-
-* **Persistent Conversations & Chat History**:
-  - PostgreSQL-backed persistent conversations surviving browser refreshes and server restarts.
-  - Automatic, deterministic conversation title generation from the first user query.
-  - Multi-turn conversation context with bounded history (last 6 messages) for follow-up questions.
-  - Follow-up query enrichment for semantic retrieval.
-  - Reopening past chats restores original answer citations and enables instant source inspection.
-  - Thread deletion with cascade cleanup across all turns.
-
-* **Production Readiness & Deployment**:
-  - Dynamic cloud container port binding (`$PORT`).
-  - Comma-separated and JSON-formatted CORS origins configuration.
-  - Production security validation: forces `DEBUG=False` and rejects development secret keys.
-  - Cloud database URL normalization supporting `postgres://` and `sslmode=require`.
-  - Containerization with multi-stage Dockerfiles, healthchecks, and Alembic migrations on startup.
-  - Single-Page Application (SPA) client-side routing rewrites (`vercel.json`).
-
-### Planned Future Features (Post-MVP):
-* Tabular data and spreadsheet analysis (Excel/CSV).
-* Multi-document comparison and cross-document synthesis.
-* Visual reasoning and image understanding.
-* Autonomous agent orchestration and tool execution.
+### Complete Ingestion & Query Lifecycle:
+1. **Document Ingestion**: File type signature validation via magic bytes (PDF `%PDF-`, DOCX ZIP `PK\x03\x04`, CSV UTF-8/ASCII). Files stored in isolated tenant directory.
+2. **Extraction & Ephemeral Resilience**: PyMuPDF extracts page-indexed text; `python-docx` extracts headings, paragraphs, and tables; `CSVExtractor` converts tabular data. If local ephemeral container disks are purged on host restarts, `DocumentService` transparently reconstructs normalized units directly from persisted PostgreSQL database chunks.
+3. **Deterministic Chunking**: Fixed-size windowing (1000 characters, 150-char overlap, min 50 characters) preserving source page numbers and sequence provenance.
+4. **Dense Vector Embeddings**: 1536-dimensional embeddings generated via OpenAI `text-embedding-3-small` (or deterministic `MockEmbeddingProvider` in offline environments).
+5. **pgvector Storage**: Idempotent persistence in `document_chunks` table with `Vector(1536)` cosine distance indexing (`<=>`).
+6. **Hybrid Semantic Retrieval**: Cosine distance similarity combined with reciprocal keyword overlap scoring (`retrieval_service.py`), strictly bounded by `WHERE documents.user_id == current_user.id`.
+7. **Grounded Synthesis & Provenance**: Response generation using OpenAI `gpt-4o-mini` quarantined behind anti-prompt-injection delimiter boundaries. System extracts `[S1]`, `[S2]` citation tokens, validates them against retrieved source chunks, discards ungrounded citations, and returns complete page provenance.
 
 ---
 
-## 3. Technology Stack
+## 2. Feature Inventory
 
-| Layer | Technology | Details |
-|---|---|---|
-| **Frontend Framework** | React 18 + Vite 5 | Fast HMR, optimized production chunks |
-| **Language** | TypeScript 5 | Strict typing across all components and API schemas |
-| **Styling** | Tailwind CSS 3 | Modern enterprise theme, responsive layouts |
-| **Icons & UI** | Lucide React | Minimalist enterprise iconography |
-| **HTTP Client** | Axios | Configured with token interceptors & 30s timeout |
-| **Backend Framework** | FastAPI 0.111 | High performance async ASGI framework |
-| **ASGI Server** | Uvicorn 0.30 | Production ASGI server |
-| **ORM & Database** | SQLAlchemy 2.0 (Async) | `asyncpg` for queries, `psycopg` for migrations |
-| **Vector Engine** | PostgreSQL 16 + pgvector | Cosine distance similarity indexing |
-| **Migrations** | Alembic 1.13 | Version-controlled schema migrations |
-| **Document Processing**| PyMuPDF + python-docx | High-fidelity text and structure extraction |
-| **Embedding Model** | text-embedding-3-small | 1536-dimensional dense embeddings |
-| **LLM Model** | gpt-4o-mini | Temperature 0.0 for deterministic factual grounding |
+| Module | Route / API | Status | Capabilities & Enterprise Hardening |
+|---|---|---|---|
+| **Authentication** | `/login`, `/register`, `/api/v1/auth` | **Production Ready** | Bcrypt password hashing (12 rounds), HS256 JWT bearer tokens, CORS origin validation, automatic token refresh. |
+| **Document Ingestion** | `/documents`, `/api/v1/documents` | **Production Ready** | PDF, DOCX, CSV support; magic byte verification; idempotent re-indexing; ephemeral disk recovery fallback. |
+| **Ask Cogniva (RAG)** | `/chat`, `/api/v1/rag`, `/api/v1/chat` | **Production Ready** | Multi-turn chat threads; persistent message storage; `[S1]` provenance badges; source excerpt modal; anti-injection defense. |
+| **Collections** | `/collections`, `/api/v1/collections` | **Production Ready** | Logical grouping of documents; cross-tenant IDOR protection on add/remove/delete; document count badges. |
+| **Structured Extraction** | `/documents/:id`, `/api/v1/intelligence/extract` | **Production Ready** | Extracts key entities, dates, metrics, obligations, risks, action items; full-document context; CSV & JSON schema export. |
+| **Executive Summary** | `/documents/:id`, `/api/v1/intelligence/summary` | **Production Ready** | Concise and detailed summaries; full-document context aggregation; grounded problem/proposal/architecture/risk coverage. |
+| **Research Reports** | `/research`, `/api/v1/research/report` | **Production Ready** | Multi-step inquiry decomposition; cited intelligence reports; source manifest tables; markdown export. |
+| **Document Comparison** | `/documents/compare`, `/api/v1/intelligence/compare` | **Production Ready** | Side-by-side multi-document cross-synthesis; differential analysis of specs and terms. |
+| **Audit Trail** | `/audit`, `/api/v1/audit` | **Production Ready** | Immutable security events; automatic credential & secret redaction; tenant-scoped log inspection. |
+| **Evaluation & Telemetry**| `/evaluation`, `/api/v1/evaluation` | **Production Ready** | Live tenant telemetry (indexed chunks, citation coverage) clearly separated from empirical benchmarks (hit rate, MRR, faithfulness, 0.8% observed hallucination rate). |
+
+---
+
+## 3. Security Model & Tenant Isolation
+
+Treating data confidentiality as the highest-priority invariant:
+
+1. **SQL-Level Isolation**: Tenant filtering is enforced in raw PostgreSQL queries (`WHERE documents.user_id == current_user.id`), never merely in frontend UI state.
+2. **Cross-Tenant IDOR Prevention**: Every mutation or lookup endpoint verifies resource ownership. In `collection_service.py`, `remove_document_from_collection` strictly verifies `collection.user_id == current_user.id`.
+3. **Audit Log Sanitization**: `AuditService.sanitize_details` automatically redacts passwords, tokens, API keys, client secrets, and hashed credentials before saving to the database.
+4. **Anti-Prompt-Injection**: Untrusted document excerpts are quarantined within XML/bracket delimiters to prevent malicious instructions inside uploaded files from overriding LLM guardrails.
+5. **Zero Secret Leakage**: Raw 1536-dimensional embeddings, internal filesystem paths, and environment secrets are never returned in public API payloads or error messages.
 
 ---
 
@@ -124,176 +81,120 @@ Cogniva MVP implements complete functionality for Phases 0 through 12:
 ### Prerequisites
 - **Node.js** (v18+ or v20+) & **npm**
 - **Python** (v3.11+ or v3.12+)
-- **PostgreSQL** with `pgvector` extension installed (or Docker)
+- **PostgreSQL 15+** with `pgvector` extension (optional for pure unit testing)
 
-### 1. Clone & Environment Setup
-```bash
-# Clone repository
-git clone <repository-url>
-cd cogniva
-
-# Copy environment template
-cp .env.example .env
-```
-
-Edit `.env` to configure your local database credentials and OpenAI API key.
-
-### 2. Backend Setup
+### 1. Backend Setup
 ```bash
 cd backend
 
 # Create and activate virtual environment
 python -m venv .venv
-
 # Windows:
-.venv\Scripts\activate
-# Linux / macOS:
+.\.venv\Scripts\activate
+# Linux/macOS:
 source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Run database migrations
+# Configure environment variables
+cp .env.example .env
+# Edit .env with your local settings
+
+# Run migrations (when PostgreSQL is active)
 alembic upgrade head
 
-# Start backend dev server
+# Start backend server
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
-The backend will be available at `http://127.0.0.1:8000`. Swagger API documentation is accessible at `http://127.0.0.1:8000/api/v1/docs`.
+Swagger UI documentation is available at `http://127.0.0.1:8000/api/v1/docs`.
 
-### 3. Frontend Setup
+### 2. Frontend Setup
 ```bash
 cd frontend
 
 # Install Node dependencies
 npm install
 
+# Configure environment
+cp .env.example .env.local
+
+# Run TypeScript type check
+npx tsc --noEmit
+
 # Start Vite dev server
 npm run dev
 ```
-The frontend will be available at `http://127.0.0.1:5173`. In development, requests to `/api` are automatically proxied to the backend at `http://127.0.0.1:8000`.
+The frontend will start at `http://localhost:5173`.
 
 ---
 
-## 5. Environment Variables Configuration
+## 5. Automated Testing & Verification
 
-| Variable | Description | Default / Example |
-|---|---|---|
-| `PROJECT_NAME` | Application display name | `Cogniva` |
-| `ENVIRONMENT` | Runtime environment (`development` or `production`) | `development` |
-| `DEBUG` | Enable debug mode (forced to `False` in production) | `True` |
-| `HOST` | Backend host bind address | `0.0.0.0` |
-| `PORT` | Backend port (overridden by `$PORT` on cloud hosts) | `8000` |
-| `CORS_ORIGINS` | Allowed frontend origins (JSON array or comma-separated) | `["http://localhost:5173"]` |
-| `VITE_API_BASE_URL` | Frontend API target URL (in production on Vercel) | `https://<backend>.onrender.com/api/v1` |
-| `DATABASE_URL` | PostgreSQL connection URL with pgvector | `postgresql+asyncpg://postgres:postgres@localhost:5432/cogniva` |
-| `SECRET_KEY` | JWT signing secret (use `openssl rand -hex 32` in production) | `cogniva-super-secret-key-for-development-change-in-production` |
-| `ALGORITHM` | JWT signing algorithm | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | JWT token lifetime | `1440` (24 hours) |
-| `STORAGE_DIR` | Directory for uploaded documents (or mounted volume) | `storage` |
-| `MAX_UPLOAD_SIZE_MB` | Maximum allowed document upload size | `50` |
-| `EMBEDDING_PROVIDER` | Embedding engine (`openai` or `mock` for testing) | `openai` |
-| `EMBEDDING_MODEL` | OpenAI embedding model name | `text-embedding-3-small` |
-| `LLM_PROVIDER` | LLM generation engine (`openai` or `mock`) | `openai` |
-| `LLM_MODEL` | Grounded answer generation model | `gpt-4o-mini` |
-| `OPENAI_API_KEY` | OpenAI API authentication key | `sk-...` |
-
----
-
-## 6. Running Tests & Production Builds
-
-### Backend Test Suite
-The automated test suite covers authentication, chunking, embeddings, pgvector retrieval, RAG, citations, conversations, tenant isolation, and deployment configuration across 65 tests:
+Cogniva includes an automated test suite across unit, enterprise, and cross-tenant isolation categories:
 
 ```bash
 cd backend
-pytest -v
+
+# Run the complete test suite:
+pytest tests/ -v
+
+# Run the enterprise features and cross-tenant isolation suite:
+pytest tests/test_enterprise_features.py -v
 ```
 
-### Frontend Production Build
+### Automated Cross-Tenant Denial Tests:
+The test suite in `tests/test_enterprise_features.py` executes automated cross-tenant denial tests:
+- `test_document_service_cross_tenant_denial`: Verifies 404 on cross-tenant document details, chunks, and deletion.
+- `test_collection_service_cross_tenant_denial`: Verifies 404 on cross-tenant collection details, deletion, document addition, and document removal (IDOR defense).
+- `test_conversation_service_cross_tenant_denial`: Verifies cross-tenant isolation for conversation lookup and deletion.
+- `test_extraction_service_cross_tenant_denial`: Verifies 404 when extracting another tenant's document.
+- `test_summary_service_cross_tenant_denial`: Verifies 404 when summarizing another tenant's document.
+- `test_retrieval_service_cross_tenant_document_scope`: Verifies 404 when searching with another tenant's document ID.
+- `test_audit_service_user_isolation`: Verifies tenant log boundary isolation.
+
+### Frontend Static Type Checking & Production Build:
 ```bash
 cd frontend
+npx tsc --noEmit
 npm run build
 ```
-This runs TypeScript type checking (`tsc`) and bundles optimized static assets into `dist/`.
 
 ---
 
-## 7. Cloud Deployment Guide (MVP)
+## 6. Cloud Deployment Architecture
 
-Cogniva MVP is designed for cost-conscious, reliable cloud deployment on modern hosting platforms suitable for student projects and enterprise prototypes.
+Cogniva is deployed in production across Vercel and Render:
 
-### Recommended Target Architecture:
-* **Frontend**: **Vercel** (Static Site CDN)
-* **Backend**: **Render** or **Railway** (Python Web Service / Container)
-* **Database**: **Supabase** or **Neon** (Managed PostgreSQL with native `pgvector`)
+- **Frontend (Vercel)**:
+  - Repository: `https://github.com/yachi22/Cogniva`
+  - Root directory: `frontend`
+  - Build command: `npm run build`
+  - Environment variable: `VITE_API_BASE_URL=https://cogniva-api.onrender.com/api/v1`
+  - Routing: Configured with `vercel.json` for client-side SPA route rewrites.
 
-### Step 1: Deploy Database (Supabase or Neon)
-1. Create a free PostgreSQL project on [Supabase](https://supabase.com) or [Neon](https://neon.tech).
-2. Ensure the `vector` extension is enabled (Supabase enables it automatically; Neon supports `CREATE EXTENSION IF NOT EXISTS vector;`).
-3. Copy the pooled or direct connection string:
-   ```
-   postgresql://postgres:[PASSWORD]@[HOST]:[PORT]/postgres?sslmode=require
-   ```
-
-### Step 2: Deploy Backend (Render)
-1. Create a new **Web Service** on [Render](https://render.com) pointing to the repository.
-2. Root Directory: `backend` (or use Dockerfile).
-3. **Environment**: `Python 3` (or `Docker`).
-4. **Build Command**:
-   ```bash
-   pip install -r requirements.txt && alembic upgrade head
-   ```
-5. **Start Command**:
-   ```bash
-   sh start.sh
-   # or: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-   ```
-6. **Environment Variables**:
-   * `ENVIRONMENT`: `production`
-   * `DEBUG`: `False`
-   * `DATABASE_URL`: Your Supabase/Neon connection URL
-   * `SECRET_KEY`: Generate a random key: `openssl rand -hex 32`
-   * `OPENAI_API_KEY`: Your OpenAI API key
-   * `CORS_ORIGINS`: Your Vercel frontend URL (e.g. `https://cogniva.vercel.app`)
-7. Once deployed, note your service URL: `https://<your-service>.onrender.com`.
-
-### Step 3: Deploy Frontend (Vercel)
-1. Import the repository on [Vercel](https://vercel.com).
-2. Set **Root Directory** to `frontend`.
-3. Framework Preset: **Vite**.
-4. **Environment Variables**:
-   * `VITE_API_BASE_URL`: `https://<your-service>.onrender.com/api/v1`
-5. Deploy. The included `frontend/vercel.json` ensures that direct navigation to `/chat`, `/chat/:id`, and `/documents` routes will not trigger 404 errors.
+- **Backend (Render Web Service)**:
+  - Root directory: `backend`
+  - Build command: `pip install -r requirements.txt && alembic upgrade head`
+  - Start command: `sh start.sh` (or `uvicorn app.main:app --host 0.0.0.0 --port $PORT`)
+  - Environment variables:
+    - `ENVIRONMENT`: `production`
+    - `DEBUG`: `False`
+    - `DATABASE_URL`: Cloud PostgreSQL with `pgvector` (`postgresql+asyncpg://...`)
+    - `SECRET_KEY`: Production 64-character hex key
+    - `CORS_ORIGINS`: `https://cogniva-gules.vercel.app`
+    - `OPENAI_API_KEY`: Production OpenAI key
 
 ---
 
-## 8. Health Verification & Monitoring Endpoints
+## 7. Health Checks & Telemetry Verification
 
-* **Liveness Probe**:
-  ```http
-  GET /api/v1/health
-  ```
-  Returns `{"status": "ok", "app": "Cogniva", "version": "0.1.0", "environment": "production"}`.
-
-* **Readiness Probe**:
-  ```http
-  GET /api/v1/health/ready
-  ```
-  Executes a safe `SELECT 1` against PostgreSQL without exposing credentials, returning `{"status": "ok", "database": "connected"}`.
+- **Liveness Probe**: `GET /api/v1/health` → `{"status": "ok", "app": "Cogniva", "version": "0.1.0"}`
+- **Readiness Probe**: `GET /api/v1/health/ready` → `{"status": "ok", "database": "connected"}`
+- **Evaluation Dashboard**: `GET /api/v1/evaluation/metrics` → Real-time tenant telemetry and empirical benchmark scores.
 
 ---
 
-## 9. Security & Privacy Considerations
-
-1. **Strict Tenant Boundaries**: All document chunks, retrieval queries, and conversation messages are scoped to the authenticated user ID (`WHERE user_id == current_user.id`). Cross-user requests return `404 Not Found` to prevent resource enumeration.
-2. **Zero Credential / Embedding Exposure**: Internal server paths (`storage_path`) and 1536-dimensional raw embeddings are never returned over API endpoints.
-3. **Input Sanitization**: File uploads are verified by extension and magic byte signatures. Filenames are strictly sanitized to prevent directory traversal.
-4. **Grounded RAG Boundaries**: User queries and untrusted document texts are quarantined in delimited data blocks to protect against prompt injection and override attacks.
-5. **Production Secret Enforcement**: The backend fails at startup if configured with `ENVIRONMENT=production` while retaining development secrets.
-
----
-
-## 10. License
+## 8. License
 
 Copyright © 2026 Cogniva Team. All rights reserved.

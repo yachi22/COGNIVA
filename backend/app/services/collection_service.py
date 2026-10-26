@@ -241,12 +241,25 @@ class CollectionService:
         collection_id: uuid.UUID,
         document_id: uuid.UUID,
     ) -> None:
+        # Verify collection ownership
+        col_stmt = select(Collection).where(
+            Collection.id == collection_id,
+            Collection.user_id == user_id,
+        )
+        col_res = await db.execute(col_stmt)
+        if not col_res.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Collection not found or access denied.",
+            )
+
         del_stmt = delete(collection_documents).where(
             collection_documents.c.collection_id == collection_id,
             collection_documents.c.document_id == document_id,
         )
         await db.execute(del_stmt)
         await db.commit()
+
 
 
 collection_service = CollectionService()
