@@ -16,6 +16,9 @@ export const AppLayout: React.FC = () => {
         return { title: "Ask Cogniva", subtitle: "Grounded multimodal knowledge agent with verified provenance" };
       case "/documents":
         return { title: "Documents", subtitle: "Deterministic ingestion, structural parsing, and vector repository" };
+      case "/evaluation":
+      case "/telemetry":
+        return { title: "Evaluation & Telemetry", subtitle: "Live retrieval accuracy, provenance coverage, and deterministic quality benchmarks" };
       case "/settings":
         return { title: "Settings", subtitle: "Tenant configuration, security protocols, and interface appearance" };
       default:

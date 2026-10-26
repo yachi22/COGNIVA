@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import ChatPage from "./pages/ChatPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import SettingsPage from "./pages/SettingsPage";
+import EvaluationPage from "./pages/EvaluationPage";
 
 export const App: React.FC = () => {
   return (
@@ -39,6 +40,8 @@ export const App: React.FC = () => {
               <Route path="/chat/:conversationId" element={<ChatPage />} />
               <Route path="/documents" element={<DocumentsPage />} />
               <Route path="/documents/:documentId" element={<DocumentsPage />} />
+              <Route path="/evaluation" element={<EvaluationPage />} />
+              <Route path="/telemetry" element={<EvaluationPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Route>

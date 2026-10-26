@@ -9,6 +9,7 @@ import {
   Layers,
   X,
   User as UserIcon,
+  Activity,
 } from "lucide-react";
 import { useAuth } from "../../hooks/useAuth";
 import ThemeToggle from "../common/ThemeToggle";
@@ -31,6 +32,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
     { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
     { name: "Ask Cogniva", path: "/chat", icon: MessageSquare },
     { name: "Documents", path: "/documents", icon: FileText },
+    { name: "Evaluation & Telemetry", path: "/evaluation", icon: Activity },
   ];
 
   return (

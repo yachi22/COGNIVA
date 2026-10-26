@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import {
   User,
   Shield,
@@ -17,6 +18,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  ArrowRight,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useTheme, Theme } from "../context/ThemeContext";
@@ -429,16 +431,27 @@ export const SettingsPage: React.FC = () => {
                 Authentic live retrieval measurements and grounded generation benchmark scores.
               </p>
             </div>
-            <Button
-              variant="outline"
-              size="xs"
-              onClick={loadEvaluationMetrics}
-              disabled={loadingMetrics}
-              className="flex items-center gap-1.5 text-xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingMetrics ? "animate-spin" : ""}`} />
-              Refresh Telemetry
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="xs"
+                onClick={loadEvaluationMetrics}
+                disabled={loadingMetrics}
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingMetrics ? "animate-spin" : ""}`} />
+                Refresh
+              </Button>
+              <Link to="/evaluation">
+                <Button
+                  variant="primary"
+                  size="xs"
+                  className="flex items-center gap-1 text-xs"
+                >
+                  Full Telemetry Dashboard <ArrowRight className="w-3 h-3" />
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {loadingMetrics ? (
