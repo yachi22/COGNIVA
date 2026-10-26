@@ -63,9 +63,13 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
         )
         db_status = "unavailable"
 
+    from app.services.storage_service import storage_service
+
     response = {
         "status": "ok" if db_status == "connected" else "degraded",
         "database": db_status,
+        "storage": storage_service.provider.provider_name,
+        "storage_durable": storage_service.provider.is_durable,
         "app": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT,
     }
@@ -115,4 +119,35 @@ async def run_db_migrations(db: AsyncSession = Depends(get_db)):
         status_report["table_check_error"] = str(exc)
 
     return status_report
+
+
+@router.post("/health/migrate-storage", tags=["health"])
+async def run_storage_migration(db: AsyncSession = Depends(get_db)):
+    """
+    Idempotent and resumable storage migration endpoint.
+    Safely migrates documents from ephemeral disk to durable object storage (S3/R2)
+    after verifying byte integrity, preserving all database chunks and vector indices.
+    """
+    from app.services.storage_service import storage_service
+    from app.services.storage.migration import storage_migration_service
+
+    if not storage_service.provider.is_durable:
+        return {
+            "status": "noop",
+            "message": "Active storage provider is local ephemeral disk. Configure S3/R2 credentials and STORAGE_PROVIDER to migrate.",
+            "current_provider": storage_service.provider.provider_name,
+            "is_durable": False,
+        }
+
+    migration_report = await storage_migration_service.migrate_all_documents(
+        db=db,
+        target_provider=storage_service.provider,
+        local_provider=storage_service.local_provider,
+    )
+    return {
+        "status": "completed",
+        "provider": storage_service.provider.provider_name,
+        "is_durable": True,
+        "report": migration_report,
+    }
 
