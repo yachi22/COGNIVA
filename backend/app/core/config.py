@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     Designed to be clear, modular, and production-ready.
     """
     PROJECT_NAME: str = "Cogniva"
-    VERSION: str = "0.1.0"
+    VERSION: str = "0.1.1"
     DESCRIPTION: str = "Cogniva | Multimodal Enterprise Knowledge Agent"
     API_V1_STR: str = "/api/v1"
     

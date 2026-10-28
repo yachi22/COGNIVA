@@ -13,11 +13,14 @@ async def get_health():
     Liveness health check endpoint to verify backend service availability.
     Returns status: ok as required by specification.
     """
+    import os
+    commit = os.environ.get("RENDER_GIT_COMMIT") or "latest"
     return {
         "status": "ok",
         "app": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
+        "commit": commit,
     }
 
 

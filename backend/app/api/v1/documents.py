@@ -232,34 +232,39 @@ async def delete_document(
 
 @router.get(
     "/{document_id}/download",
-    summary="Download authentic original document binary",
-    description="Securely downloads the authentic uploaded document binary. Enforces tenant isolation. Redirects to short-lived presigned URL if durable S3/R2 storage is enabled and redirect=True.",
+    summary="Download original document binary or recovered text",
+    description="Securely downloads the authentic uploaded document binary, redirects to presigned S3/R2 URL, or falls back to reconstructed text from persisted database chunks if the ephemeral binary was purged.",
 )
 async def download_document(
     document_id: uuid.UUID,
     redirect: bool = Query(True, description="Redirect to presigned S3/R2 URL if available"),
+    fallback_text: bool = Query(True, description="Fall back to reconstructed text if original binary is missing on ephemeral disk"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    binary_bytes, original_name, content_type, presigned_url = (
+    binary_bytes, filename, content_type, presigned_url, is_reconstructed = (
         await document_service.get_document_download(
             db=db,
             user_id=current_user.id,
             document_id=document_id,
+            fallback_text=fallback_text,
         )
     )
 
     if redirect and presigned_url:
         return RedirectResponse(url=presigned_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
-    safe_name = original_name.replace('"', "")
+    safe_name = filename.replace('"', "")
+    headers = {
+        "Content-Disposition": f'attachment; filename="{safe_name}"',
+        "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        "X-Cogniva-Recovered": "true" if is_reconstructed else "false",
+        "X-Cogniva-Original-Binary-Available": "false" if is_reconstructed else "true",
+    }
     return Response(
         content=binary_bytes,
         media_type=content_type,
-        headers={
-            "Content-Disposition": f'attachment; filename="{safe_name}"',
-            "Cache-Control": "private, no-cache, no-store, must-revalidate",
-        },
+        headers=headers,
     )
 
 
@@ -270,23 +275,27 @@ async def download_document(
 )
 async def get_download_url(
     document_id: uuid.UUID,
+    fallback_text: bool = Query(True, description="Fall back to reconstructed text if original binary is missing on ephemeral disk"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    binary_bytes, original_name, content_type, presigned_url = (
+    binary_bytes, filename, content_type, presigned_url, is_reconstructed = (
         await document_service.get_document_download(
             db=db,
             user_id=current_user.id,
             document_id=document_id,
+            fallback_text=fallback_text,
         )
     )
 
     return {
         "document_id": str(document_id),
-        "filename": original_name,
+        "filename": filename,
         "content_type": content_type,
         "download_url": presigned_url or f"/api/v1/documents/{document_id}/download",
         "is_presigned": presigned_url is not None,
         "expires_in_seconds": 900 if presigned_url else None,
+        "is_reconstructed": is_reconstructed,
+        "original_binary_available": not is_reconstructed,
     }
 

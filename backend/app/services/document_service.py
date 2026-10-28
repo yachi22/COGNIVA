@@ -100,7 +100,7 @@ class DocumentService:
 
         full_file_path = storage_service.get_full_path(document.storage_path)
         if not full_file_path.exists() or not full_file_path.is_file():
-            # Ephemeral container restart: restore from durable storage provider into local user cache
+            # Ephemeral container restart: attempt restore from storage provider into local user cache if configured
             try:
                 binary_bytes = await storage_service.get_document_bytes(
                     user_id=user_id,
@@ -112,7 +112,44 @@ class DocumentService:
                 with open(full_file_path, "wb") as f:
                     f.write(binary_bytes)
             except Exception as e:
-                logger.warning(f"Could not restore binary from durable storage for doc {document.id}: {e}")
+                logger.warning(f"Could not restore binary from storage provider for doc {document.id}: {e}")
+
+        # Check if physical file is missing after restoration attempt
+        if not full_file_path.exists() or not full_file_path.is_file():
+            # Check if this document already has chunks persisted in PostgreSQL
+            chunk_stmt = (
+                select(DocumentChunk)
+                .where(DocumentChunk.document_id == document.id)
+                .order_by(DocumentChunk.chunk_index.asc())
+            )
+            res = await db.execute(chunk_stmt)
+            existing_chunks = list(res.scalars().all())
+
+            if existing_chunks:
+                logger.info(
+                    f"Document {document_id} original binary is not on ephemeral disk, "
+                    f"but {len(existing_chunks)} chunks are already safely persisted in PostgreSQL. Preserving processed state."
+                )
+                current_metadata = dict(document.metadata_ or {})
+                current_metadata["missing_binary_on_ephemeral_disk"] = True
+                current_metadata["recovered_from_chunks"] = True
+                document.status = "processed"
+                document.metadata_ = current_metadata
+                await db.commit()
+                await db.refresh(document)
+                return document
+            else:
+                # Document was never processed and original binary is missing from ephemeral disk
+                current_metadata = dict(document.metadata_ or {})
+                current_metadata["error"] = (
+                    "Original document binary was lost during ephemeral container restart before text extraction. "
+                    "Please re-upload the document."
+                )
+                document.status = "failed"
+                document.metadata_ = current_metadata
+                await db.commit()
+                await db.refresh(document)
+                return document
 
         try:
             # 2. Execute extraction
@@ -247,7 +284,7 @@ class DocumentService:
             pages = [c.page_number for c in chunks if c.page_number is not None]
             total_pages = max(pages) if pages else (1 if document.file_type == "pdf" else None)
 
-            return ExtractedDocument(
+            extracted_doc = ExtractedDocument(
                 document_id=document.id,
                 file_type=document.file_type,
                 units=units,
@@ -258,6 +295,18 @@ class DocumentService:
                 full_text=full_text,
                 extracted_at=document.created_at or datetime.now(timezone.utc),
             )
+
+            # Re-cache JSON locally if user storage directory exists so subsequent reads are instant
+            try:
+                storage_service.save_extracted_json(
+                    user_id=user_id,
+                    relative_storage_path=document.storage_path,
+                    data=extracted_doc.model_dump(mode="json"),
+                )
+            except Exception:
+                pass
+
+            return extracted_doc
 
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -384,12 +433,15 @@ class DocumentService:
         db: AsyncSession,
         user_id: uuid.UUID,
         document_id: uuid.UUID,
-    ) -> Tuple[bytes, str, str, Optional[str]]:
+        fallback_text: bool = True,
+    ) -> Tuple[bytes, str, str, Optional[str], bool]:
         """
         Retrieves authentic document binary and optional presigned download URL.
+        If original binary is missing (e.g. after ephemeral container restart),
+        recovers full textual content from PostgreSQL chunks when fallback_text=True.
         Enforces tenant isolation.
         Returns:
-            Tuple of (binary_bytes, original_filename, content_type, presigned_url)
+            Tuple of (binary_bytes, filename, content_type, presigned_url, is_reconstructed)
         """
         document = await self.get_user_document(db=db, user_id=user_id, document_id=document_id)
         meta = dict(document.metadata_ or {})
@@ -411,13 +463,36 @@ class DocumentService:
                 storage_path=document.storage_path,
                 metadata_=meta,
             )
+            return binary_bytes, original_name, content_type, presigned_url, False
         except StorageObjectNotFoundError:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Original document binary is not available. (File was not durably stored before ephemeral container reset)."
-            )
+            if not fallback_text:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Original document binary is not available. (File was not durably stored before ephemeral container reset)."
+                )
 
-        return binary_bytes, original_name, content_type, presigned_url
+            # Resilient recovery: reconstruct text from persisted database chunks
+            try:
+                extracted = await self.get_extracted_document(db=db, user_id=user_id, document_id=document_id)
+            except HTTPException:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Original document binary and extracted content are not available on this ephemeral instance."
+                )
+
+            from pathlib import Path
+            header = (
+                f"# Cogniva Extracted Content Recovery\n"
+                f"# Original Document: {original_name}\n"
+                f"# Note: The original uploaded file binary is unavailable on this ephemeral container instance.\n"
+                f"# This content was recovered from persisted PostgreSQL chunks and vector embeddings.\n"
+                f"# Total Pages: {extracted.total_pages or 'N/A'} | Total Units: {extracted.total_units} | Total Words: {extracted.total_words}\n\n"
+            )
+            text_content = header + extracted.full_text
+            text_bytes = text_content.encode("utf-8")
+            stem = Path(original_name).stem
+            recovered_filename = f"{stem}_recovered.txt"
+            return text_bytes, recovered_filename, "text/plain; charset=utf-8", None, True
 
 
 # Singleton instance
