@@ -50,3 +50,4 @@ class DocumentJobProgressResponse(BaseModel):
     retry_count: int
     error_message: Optional[str] = None
     updated_at: datetime
+

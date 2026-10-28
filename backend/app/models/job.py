@@ -115,3 +115,4 @@ class DocumentJob(Base):
 
     def __repr__(self) -> str:
         return f"<DocumentJob id={self.id} doc_id={self.document_id} status={self.status} stage={self.stage} progress={self.progress}%>"
+

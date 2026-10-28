@@ -50,3 +50,4 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_document_jobs_user_id'), table_name='document_jobs')
     op.drop_index(op.f('ix_document_jobs_document_id'), table_name='document_jobs')
     op.drop_table('document_jobs')
+
