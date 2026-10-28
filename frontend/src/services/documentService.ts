@@ -5,6 +5,8 @@ import {
   ExtractedDocument,
   DocumentChunkListResponse,
   DocumentChunkDetail,
+  DocumentJob,
+  DocumentJobListResponse,
 } from "../types/document";
 
 export const documentService = {
@@ -50,10 +52,34 @@ export const documentService = {
   },
 
   /**
-   * Trigger synchronous text extraction pipeline for a document.
+   * Trigger background text extraction pipeline for a document.
    */
-  async processDocument(id: string): Promise<DocumentItem> {
-    const response = await apiClient.post<DocumentItem>(`/documents/${id}/process`);
+  async processDocument(id: string, background: boolean = true): Promise<DocumentItem> {
+    const response = await apiClient.post<DocumentItem>(`/documents/${id}/process?background=${background}`);
+    return response.data;
+  },
+
+  /**
+   * Get active or latest background processing job for a document.
+   */
+  async getLatestJob(documentId: string): Promise<DocumentJob> {
+    const response = await apiClient.get<DocumentJob>(`/documents/${documentId}/job`);
+    return response.data;
+  },
+
+  /**
+   * List all processing jobs and audit history for a document.
+   */
+  async getDocumentJobs(documentId: string): Promise<DocumentJobListResponse> {
+    const response = await apiClient.get<DocumentJobListResponse>(`/documents/${documentId}/jobs`);
+    return response.data;
+  },
+
+  /**
+   * Manually retry a failed document processing job.
+   */
+  async retryDocumentJob(documentId: string, jobId: string): Promise<DocumentJob> {
+    const response = await apiClient.post<DocumentJob>(`/documents/${documentId}/jobs/${jobId}/retry`);
     return response.data;
   },
 

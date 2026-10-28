@@ -18,6 +18,7 @@ export const DocumentsPage: React.FC = () => {
     uploadError,
     uploadSuccess,
     processingIds,
+    jobStates,
     uploadFile,
     processDoc,
     getExtracted,
@@ -82,6 +83,7 @@ export const DocumentsPage: React.FC = () => {
         documents={documents}
         isLoading={isLoading}
         processingIds={processingIds}
+        jobStates={jobStates}
         onProcess={processDoc}
         onViewExtracted={getExtracted}
         onDelete={deleteDoc}

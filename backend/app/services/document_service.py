@@ -93,8 +93,21 @@ class DocumentService:
         """
         document = await self.get_user_document(db=db, user_id=user_id, document_id=document_id)
 
-        # 1. Transition to 'processing'
+        # 1. Transition to 'processing' and track job
+        from app.services.job_service import document_job_service
+        job, _ = await document_job_service.create_or_get_job(
+            db=db, user_id=user_id, document_id=document_id, force=True
+        )
+        job.status = "processing"
+        job.stage = "extracting"
+        job.current_stage = 1
+        job.progress = 10
+        job.started_at = datetime.now(timezone.utc)
+
         document.status = "processing"
+        doc_meta = dict(document.metadata_ or {})
+        doc_meta["active_job_id"] = str(job.id)
+        document.metadata_ = doc_meta
         await db.commit()
         await db.refresh(document)
 
@@ -135,6 +148,12 @@ class DocumentService:
                 current_metadata["recovered_from_chunks"] = True
                 document.status = "processed"
                 document.metadata_ = current_metadata
+
+                job.status = "completed"
+                job.stage = "completed"
+                job.progress = 100
+                job.completed_at = datetime.now(timezone.utc)
+
                 await db.commit()
                 await db.refresh(document)
                 return document
@@ -147,6 +166,12 @@ class DocumentService:
                 )
                 document.status = "failed"
                 document.metadata_ = current_metadata
+
+                job.status = "failed"
+                job.stage = "failed"
+                job.error_message = current_metadata["error"]
+                job.completed_at = datetime.now(timezone.utc)
+
                 await db.commit()
                 await db.refresh(document)
                 return document
@@ -210,6 +235,13 @@ class DocumentService:
 
             document.status = "processed"
             document.metadata_ = current_metadata
+
+            job.status = "completed"
+            job.stage = "completed"
+            job.progress = 100
+            job.completed_at = datetime.now(timezone.utc)
+            job.error_message = None
+
             await db.commit()
             await db.refresh(document)
             return document
@@ -227,6 +259,15 @@ class DocumentService:
                 current_metadata["error"] = f"Document processing failed: {str(e)}"
             document.status = "failed"
             document.metadata_ = current_metadata
+
+            # Reload job and mark failed
+            job = await document_job_service.get_latest_job(db=db, user_id=user_id, document_id=document_id)
+            if job:
+                job.status = "failed"
+                job.stage = "failed"
+                job.error_message = current_metadata["error"]
+                job.completed_at = datetime.now(timezone.utc)
+
             await db.commit()
             await db.refresh(document)
             return document

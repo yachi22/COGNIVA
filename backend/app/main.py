@@ -34,6 +34,15 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         print(f"Base.metadata.create_all notice: {exc}")
 
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.services.job_service import document_job_service
+        async with AsyncSessionLocal() as db:
+            recovery_report = await document_job_service.recover_interrupted_jobs(db)
+            print(f"Startup document job recovery completed: {recovery_report}")
+    except Exception as exc:
+        print(f"Startup document job recovery notice: {exc}")
+
     yield
 
 

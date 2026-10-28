@@ -14,7 +14,13 @@ from app.schemas.document import (
     DocumentChunkListResponse,
     DocumentChunkDetailResponse,
 )
+from app.schemas.job import (
+    DocumentJobResponse,
+    DocumentJobListResponse,
+    DocumentJobProgressResponse,
+)
 from app.services.document_service import document_service
+from app.services.job_service import document_job_service
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -87,22 +93,119 @@ async def get_document(
     "/{document_id}/process",
     response_model=DocumentResponse,
     summary="Trigger text extraction pipeline for a document",
-    description="Executes text extraction for an uploaded PDF or DOCX file. Updates status from uploaded -> processing -> processed (or failed).",
+    description="Executes text extraction, chunking, and vector embedding. Defaults to asynchronous background job processing with stage progress tracking.",
 )
 async def process_document(
     document_id: uuid.UUID,
+    background: bool = Query(True, description="Process asynchronously in background task"),
+    force: bool = Query(False, description="Force re-processing if already completed"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> DocumentResponse:
     """
     Triggers or retries extraction pipeline for the specified document.
+    Enforces strict tenant isolation and prevents duplicate concurrent runs.
     """
-    doc = await document_service.process_document(
+    if background:
+        job, is_new = await document_job_service.create_or_get_job(
+            db=db,
+            user_id=current_user.id,
+            document_id=document_id,
+            force=force,
+        )
+        if is_new or job.status == "pending":
+            document_job_service.dispatch_background_job(job.id)
+
+        doc = await document_service.get_user_document(
+            db=db,
+            user_id=current_user.id,
+            document_id=document_id,
+        )
+        return DocumentResponse.model_validate(doc)
+    else:
+        doc = await document_service.process_document(
+            db=db,
+            user_id=current_user.id,
+            document_id=document_id,
+        )
+        return DocumentResponse.model_validate(doc)
+
+
+@router.get(
+    "/{document_id}/job",
+    response_model=DocumentJobResponse,
+    summary="Get active or latest background processing job",
+    description="Returns live stage (extracting, chunking, embedding, indexing), progress (0-100), retry count, and errors.",
+)
+async def get_latest_document_job(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentJobResponse:
+    """
+    Poll live processing job progress with tenant authorization.
+    """
+    job = await document_job_service.get_latest_job(
         db=db,
         user_id=current_user.id,
         document_id=document_id,
     )
-    return DocumentResponse.model_validate(doc)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No processing jobs found for this document."
+        )
+    return DocumentJobResponse.model_validate(job)
+
+
+@router.get(
+    "/{document_id}/jobs",
+    response_model=DocumentJobListResponse,
+    summary="List all processing jobs for document",
+    description="Returns chronological audit history of all processing runs and retries for the document.",
+)
+async def list_document_jobs(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentJobListResponse:
+    """
+    List processing jobs for document with tenant authorization.
+    """
+    jobs = await document_job_service.get_document_jobs(
+        db=db,
+        user_id=current_user.id,
+        document_id=document_id,
+    )
+    return DocumentJobListResponse(
+        total=len(jobs),
+        document_id=document_id,
+        jobs=[DocumentJobResponse.model_validate(j) for j in jobs],
+    )
+
+
+@router.post(
+    "/{document_id}/jobs/{job_id}/retry",
+    response_model=DocumentJobResponse,
+    summary="Retry a failed background processing job",
+    description="Re-queues a failed document processing job with fresh retry budget.",
+)
+async def retry_document_job(
+    document_id: uuid.UUID,
+    job_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentJobResponse:
+    """
+    Manually retries a failed job with tenant isolation.
+    """
+    job = await document_job_service.retry_job(
+        db=db,
+        user_id=current_user.id,
+        document_id=document_id,
+        job_id=job_id,
+    )
+    return DocumentJobResponse.model_validate(job)
 
 
 @router.get(

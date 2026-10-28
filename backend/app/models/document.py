@@ -10,6 +10,7 @@ from app.core.database import Base
 if TYPE_CHECKING:
     from app.models.user import User
     from app.models.chunk import DocumentChunk
+    from app.models.job import DocumentJob
 
 
 class Document(Base):
@@ -81,6 +82,12 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
         order_by="DocumentChunk.chunk_index",
+    )
+    jobs: Mapped[List["DocumentJob"]] = relationship(
+        "DocumentJob",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="DocumentJob.created_at.desc()",
     )
 
     def __repr__(self) -> str:

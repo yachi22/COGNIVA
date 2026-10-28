@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     Designed to be clear, modular, and production-ready.
     """
     PROJECT_NAME: str = "Cogniva"
-    VERSION: str = "0.1.2"
+    VERSION: str = "0.1.3"
     DESCRIPTION: str = "Cogniva | Multimodal Enterprise Knowledge Agent"
     API_V1_STR: str = "/api/v1"
     
@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 1000
     MAX_CONTEXT_CHARS: int = 8000
     RAG_MIN_SIMILARITY: Optional[float] = None
+
+    # Background Job Processing Configuration (Phase 12 Zero-Budget)
+    DOCUMENT_PROCESSING_TIMEOUT_SECONDS: int = 300
+    DOCUMENT_PROCESSING_MAX_RETRIES: int = 3
+    DOCUMENT_PROCESSING_MAX_CONCURRENCY: int = 3
+    DOCUMENT_PROCESSING_BASE_BACKOFF_SECONDS: float = 1.5
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

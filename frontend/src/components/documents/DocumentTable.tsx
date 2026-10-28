@@ -25,7 +25,7 @@ import {
 import Button from "../common/Button";
 import EmptyState from "../common/EmptyState";
 import Badge from "../common/Badge";
-import { DocumentItem, ExtractedDocument } from "../../types/document";
+import { DocumentItem, ExtractedDocument, DocumentJob } from "../../types/document";
 import { documentService } from "../../services/documentService";
 import SummaryModal from "./SummaryModal";
 import StructuredExtractModal from "./StructuredExtractModal";
@@ -38,6 +38,7 @@ interface DocumentTableProps {
   documents: DocumentItem[];
   isLoading?: boolean;
   processingIds?: Record<string, boolean>;
+  jobStates?: Record<string, DocumentJob>;
   onDelete?: (id: string) => Promise<boolean | unknown>;
   onProcess?: (id: string) => Promise<unknown>;
   onViewExtracted?: (id: string) => Promise<ExtractedDocument | null>;
@@ -49,6 +50,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
   documents = [],
   isLoading = false,
   processingIds = {},
+  jobStates = {},
   onDelete,
   onProcess,
   onViewExtracted,
@@ -181,12 +183,21 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
 
   const renderStatusBadge = (doc: DocumentItem) => {
     const isProcessing = processingIds[doc.id] || doc.status === "processing";
+    const job = jobStates[doc.id];
 
     if (isProcessing) {
+      const stageLabel = job?.stage
+        ? job.stage.charAt(0).toUpperCase() + job.stage.slice(1)
+        : "Processing";
+      const progressLabel = job?.progress !== undefined && job.progress > 0 ? ` (${job.progress}%)` : "";
+
       return (
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+        <span
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-100/70 dark:bg-amber-950/40 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800"
+          title={job?.error_message ? `Attempt ${job.retry_count}: ${job.error_message}` : `Current stage: ${stageLabel}`}
+        >
           <Loader2 className="w-3 h-3 animate-spin text-amber-600" />
-          Processing
+          {stageLabel}{progressLabel}
         </span>
       );
     }
@@ -203,7 +214,7 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
         return (
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-100/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
-            title={doc.metadata?.error || "Extraction failed"}
+            title={job?.error_message || doc.metadata?.error || "Processing failed"}
           >
             <AlertCircle className="w-3 h-3 text-rose-600" />
             Failed

@@ -80,3 +80,31 @@ export interface DocumentChunkListResponse {
   chunks: DocumentChunkItem[];
 }
 
+export type JobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
+export type JobStage = "queued" | "extracting" | "chunking" | "embedding" | "indexing" | "completed" | "failed";
+
+export interface DocumentJob {
+  id: string;
+  document_id: string;
+  user_id: string;
+  status: JobStatus | string;
+  stage: JobStage | string;
+  progress: number;
+  current_stage: number;
+  total_stages: number;
+  retry_count: number;
+  max_retries: number;
+  error_message?: string | null;
+  metadata?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface DocumentJobListResponse {
+  total: number;
+  document_id: string;
+  jobs: DocumentJob[];
+}
+

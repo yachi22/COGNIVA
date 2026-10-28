@@ -4,6 +4,7 @@ from app.models.chunk import DocumentChunk
 from app.models.conversation import Conversation, Message
 from app.models.collection import Collection, collection_documents
 from app.models.audit_log import AuditLog
+from app.models.job import DocumentJob
 
 __all__ = [
     "User",
@@ -14,4 +15,5 @@ __all__ = [
     "Collection",
     "collection_documents",
     "AuditLog",
+    "DocumentJob",
 ]
