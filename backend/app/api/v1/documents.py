@@ -18,7 +18,9 @@ from app.schemas.job import (
     DocumentJobResponse,
     DocumentJobListResponse,
     DocumentJobProgressResponse,
+    DocumentJobDiagnosticsResponse,
 )
+from app.core.logging_config import get_correlation_id
 from app.services.document_service import document_service
 from app.services.job_service import document_job_service
 
@@ -68,6 +70,26 @@ async def list_documents(
 
 
 @router.get(
+    "/jobs/diagnostics",
+    response_model=DocumentJobDiagnosticsResponse,
+    summary="Get operational diagnostics for background processing jobs",
+    description="Surfaces tenant-scoped diagnostics for background jobs, identifying stuck jobs, retry exhaustion, and failure category breakdown.",
+)
+async def get_jobs_diagnostics(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> DocumentJobDiagnosticsResponse:
+    """
+    Tenant-scoped background job operational diagnostics.
+    """
+    diag = await document_job_service.get_tenant_diagnostics(
+        db=db,
+        user_id=current_user.id,
+    )
+    return DocumentJobDiagnosticsResponse(**diag)
+
+
+@router.get(
     "/{document_id}",
     response_model=DocumentResponse,
     summary="Get document details",
@@ -114,7 +136,7 @@ async def process_document(
             force=force,
         )
         if is_new or job.status == "pending":
-            document_job_service.dispatch_background_job(job.id)
+            document_job_service.dispatch_background_job(job.id, correlation_id=get_correlation_id())
 
         doc = await document_service.get_user_document(
             db=db,

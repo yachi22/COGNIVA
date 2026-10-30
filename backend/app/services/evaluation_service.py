@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.document import Document
 from app.models.chunk import DocumentChunk
 from app.models.conversation import Conversation, Message
+from app.services.job_service import document_job_service
 
 logger = logging.getLogger("cogniva.evaluation_service")
 
@@ -63,6 +64,12 @@ class EvaluationService:
 
         measured_time = datetime.now(timezone.utc).isoformat()
 
+        # Operational metrics for background processing jobs
+        operational_telemetry = await document_job_service.get_tenant_operational_metrics(
+            db=db,
+            user_id=user_id,
+        )
+
         # Contract matching frontend EvaluationMetricsResponse
         return {
             "tenant_scope": f"tenant-{str(user_id)[:8]}",
@@ -76,6 +83,7 @@ class EvaluationService:
                 "avg_generation_latency_ms": 320.0,
                 "service_uptime_status": "Healthy & Operational",
             },
+            "operational_telemetry": operational_telemetry,
             "benchmark_metrics": {
                 "dataset": "Enterprise Evidence Retrieval Benchmark (v1.2)",
                 "queries_evaluated": 150,

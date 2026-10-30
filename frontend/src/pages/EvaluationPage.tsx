@@ -291,6 +291,103 @@ export const EvaluationPage: React.FC = () => {
             </div>
           </div>
 
+          {/* SECTION 1.5: Operational Reliability & Background Processing */}
+          {metrics.operational_telemetry && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Cpu className="w-4 h-4 text-accent" />
+                  <h3 className="text-sm font-semibold text-primary uppercase tracking-wider">
+                    Pipeline Operational Reliability & Ingestion Telemetry
+                  </h3>
+                </div>
+                <Badge variant="neutral" className="text-[11px] font-mono">
+                  {metrics.operational_telemetry.total_jobs} Total Jobs Evaluated
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Pipeline Success Rate */}
+                <div className="bg-surface border border-border rounded-xl p-4 transition-colors">
+                  <span className="text-[11px] text-secondary uppercase font-semibold block">
+                    Pipeline Success Rate
+                  </span>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                      {metrics.operational_telemetry.success_rate_pct}%
+                    </span>
+                  </div>
+                  <div className="w-full bg-panel rounded-full h-1.5 mt-2 overflow-hidden">
+                    <div
+                      className="bg-emerald-500 h-1.5 rounded-full"
+                      style={{ width: `${Math.min(metrics.operational_telemetry.success_rate_pct, 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-secondary">
+                    {metrics.operational_telemetry.completed_jobs} completed / {metrics.operational_telemetry.failed_jobs} failed
+                  </p>
+                </div>
+
+                {/* Mean Execution Duration */}
+                <div className="bg-surface border border-border rounded-xl p-4 transition-colors">
+                  <span className="text-[11px] text-secondary uppercase font-semibold block">
+                    Mean Execution Duration
+                  </span>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-primary font-mono">
+                      {metrics.operational_telemetry.avg_duration_seconds}s
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-secondary flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-secondary" />
+                    Extract, chunk, embed & index
+                  </p>
+                </div>
+
+                {/* Active & Queued Tasks */}
+                <div className="bg-surface border border-border rounded-xl p-4 transition-colors">
+                  <span className="text-[11px] text-secondary uppercase font-semibold block">
+                    In-Flight Pipelines
+                  </span>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold text-accent font-mono">
+                      {metrics.operational_telemetry.active_jobs}
+                    </span>
+                    <span className="text-xs text-secondary">active tasks</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-secondary">
+                    Bounded concurrency: 3 workers
+                  </p>
+                </div>
+
+                {/* Stuck Jobs & Exhausted Retries */}
+                <div className="bg-surface border border-border rounded-xl p-4 transition-colors">
+                  <span className="text-[11px] text-secondary uppercase font-semibold block">
+                    Diagnosed Pipeline Issues
+                  </span>
+                  <div className="mt-2 flex items-baseline gap-2">
+                    <span
+                      className={`text-2xl font-bold font-mono ${
+                        metrics.operational_telemetry.stuck_jobs > 0 ||
+                        metrics.operational_telemetry.retries_exhausted_jobs > 0
+                          ? "text-amber-500"
+                          : "text-primary"
+                      }`}
+                    >
+                      {metrics.operational_telemetry.stuck_jobs +
+                        metrics.operational_telemetry.retries_exhausted_jobs}
+                    </span>
+                    <span className="text-xs text-secondary">anomalies</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-secondary">
+                    {metrics.operational_telemetry.stuck_jobs} stuck,{" "}
+                    {metrics.operational_telemetry.retries_exhausted_jobs} retry-exhausted
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* SECTION 2: Deterministic Retrieval & Accuracy Benchmarks */}
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">

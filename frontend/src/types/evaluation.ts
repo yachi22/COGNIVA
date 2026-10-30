@@ -25,6 +25,17 @@ export interface EvaluationMetricsResponse {
     vector_dimension: number;
     hybrid_search_enabled: boolean;
   };
+  operational_telemetry?: {
+    total_jobs: number;
+    completed_jobs: number;
+    failed_jobs: number;
+    active_jobs: number;
+    stuck_jobs: number;
+    retries_exhausted_jobs: number;
+    avg_duration_seconds: number;
+    success_rate_pct: number;
+    failure_category_breakdown: Record<string, number>;
+  };
   tenant_live_telemetry?: {
     active_documents: number;
     indexed_vector_chunks: number;

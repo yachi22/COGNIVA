@@ -5,7 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 
 from app.core.config import settings
+from app.core.logging_config import setup_logging, CorrelationIdMiddleware
 from app.api.v1 import api_router
+
+# Initialize structured logging with correlation filter and credential redaction
+setup_logging()
 
 
 @asynccontextmanager
@@ -56,6 +60,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add correlation ID middleware for request tracing and structured logging
+app.add_middleware(CorrelationIdMiddleware)
+
 # Configure CORS safely for frontend access
 cors_origins = [origin.strip() for origin in settings.CORS_ORIGINS if origin.strip() and origin.strip() != "*"]
 if not cors_origins and settings.ENVIRONMENT != "production":
@@ -67,6 +74,12 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-Correlation-ID",
+        "X-Request-ID",
+        "X-Cogniva-Recovered",
+        "X-Cogniva-Original-Binary-Available",
+    ],
 )
 
 # Register API v1 routes

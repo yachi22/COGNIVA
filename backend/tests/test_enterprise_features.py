@@ -398,7 +398,10 @@ async def test_evaluation_service_contract_conformance():
     msg_res = MagicMock()
     msg_res.scalars.return_value.all.return_value = [mock_msg1, mock_msg2]
 
-    mock_db.execute.side_effect = [doc_res, chunk_res, msg_res]
+    jobs_res = MagicMock()
+    jobs_res.scalars.return_value.all.return_value = []
+
+    mock_db.execute.side_effect = [doc_res, chunk_res, msg_res, jobs_res]
 
     metrics = await eval_svc.get_system_evaluation_metrics(db=mock_db, user_id=user_id)
 
@@ -406,6 +409,7 @@ async def test_evaluation_service_contract_conformance():
     assert "tenant_scope" in metrics
     assert "measured_at" in metrics
     assert "live_metrics" in metrics
+    assert "operational_telemetry" in metrics
     assert "benchmark_metrics" in metrics
     assert "provider_telemetry" in metrics
 

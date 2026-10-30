@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, Optional
 from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -112,6 +112,82 @@ class DocumentJob(Base):
     user: Mapped["User"] = relationship(
         "User",
     )
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Calculates runtime duration in seconds."""
+        if self.started_at and self.completed_at:
+            return round((self.completed_at - self.started_at).total_seconds(), 2)
+        return (self.metadata_ or {}).get("duration_seconds")
+
+    @property
+    def is_stuck(self) -> bool:
+        return self.diagnose()["is_stuck"]
+
+    @property
+    def retries_exhausted(self) -> bool:
+        return self.diagnose()["retries_exhausted"]
+
+    @property
+    def failure_category(self) -> Optional[str]:
+        return self.diagnose()["failure_category"]
+
+    @property
+    def diagnosis(self) -> Optional[str]:
+        return self.diagnose()["diagnosis"]
+
+    def diagnose(self, timeout_seconds: int = 300) -> Dict[str, Any]:
+        """
+        Diagnoses job operational state, detecting stuck jobs, retry exhaustion,
+        failure categories, and actionable recommendations.
+        """
+        is_stuck = False
+        elapsed = 0.0
+        if self.status in ("pending", "processing") and self.started_at:
+            now = datetime.now(timezone.utc)
+            started = self.started_at if self.started_at.tzinfo else self.started_at.replace(tzinfo=timezone.utc)
+            elapsed = (now - started).total_seconds()
+            if elapsed > timeout_seconds:
+                is_stuck = True
+
+        retries_exhausted = self.status == "failed" and self.retry_count >= self.max_retries
+
+        category = (self.metadata_ or {}).get("failure_category")
+        if not category:
+            if is_stuck:
+                category = "timeout_error"
+            elif retries_exhausted:
+                category = "retry_exhaustion"
+            elif self.error_message and "timeout" in self.error_message.lower():
+                category = "timeout_error"
+            elif self.error_message and "embed" in self.error_message.lower():
+                category = "embedding_provider_error"
+            elif self.error_message and "extract" in self.error_message.lower():
+                category = "extraction_error"
+            elif self.error_message and "missing" in self.error_message.lower():
+                category = "missing_binary"
+            elif self.status == "failed":
+                category = "pipeline_failure"
+
+        diagnosis = None
+        if is_stuck:
+            diagnosis = f"Job appears stuck in stage '{self.stage}' for {int(elapsed)}s (exceeding {timeout_seconds}s limit). Trigger /retry to re-queue."
+        elif retries_exhausted:
+            diagnosis = f"Job exhausted all {self.max_retries} retries. Cause: {self.error_message or 'Downstream provider failure'}. Trigger /retry to re-attempt."
+        elif self.status == "failed":
+            diagnosis = f"Job failed: {self.error_message or 'Internal execution failure'}."
+        elif self.status == "completed":
+            diagnosis = "Job completed successfully."
+        else:
+            diagnosis = f"Job active in stage '{self.stage}' ({self.progress}% complete)."
+
+        return {
+            "is_stuck": is_stuck,
+            "retries_exhausted": retries_exhausted,
+            "failure_category": category,
+            "diagnosis": diagnosis,
+            "duration_seconds": self.duration_seconds,
+        }
 
     def __repr__(self) -> str:
         return f"<DocumentJob id={self.id} doc_id={self.document_id} status={self.status} stage={self.stage} progress={self.progress}%>"

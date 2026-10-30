@@ -186,6 +186,18 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     const job = jobStates[doc.id];
 
     if (isProcessing) {
+      if (job?.is_stuck) {
+        return (
+          <span
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-200/80 dark:bg-amber-900/50 text-amber-950 dark:text-amber-200 border border-amber-400 dark:border-amber-700 animate-pulse"
+            title={job?.diagnosis || "Pipeline appears stuck. Re-queue via retry."}
+          >
+            <AlertCircle className="w-3 h-3 text-amber-700 dark:text-amber-300" />
+            Stuck ({job?.stage || "pipeline"})
+          </span>
+        );
+      }
+
       const stageLabel = job?.stage
         ? job.stage.charAt(0).toUpperCase() + job.stage.slice(1)
         : "Processing";
@@ -205,16 +217,33 @@ export const DocumentTable: React.FC<DocumentTableProps> = ({
     switch (doc.status) {
       case "processed":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-100/70 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800"
+            title={job?.duration_seconds ? `Processing completed in ${job.duration_seconds}s` : undefined}
+          >
             <CheckCircle2 className="w-3 h-3 text-emerald-600" />
             Processed
+            {job?.duration_seconds ? (
+              <span className="text-[10px] opacity-75 font-mono">({job.duration_seconds}s)</span>
+            ) : null}
           </span>
         );
       case "failed":
+        if (job?.retries_exhausted) {
+          return (
+            <span
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-200/80 dark:bg-rose-950/60 text-rose-950 dark:text-rose-200 border border-rose-400 dark:border-rose-700"
+              title={job?.diagnosis || job?.error_message || "Retry limit reached"}
+            >
+              <AlertCircle className="w-3 h-3 text-rose-600" />
+              Retries Exhausted
+            </span>
+          );
+        }
         return (
           <span
             className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-rose-100/70 dark:bg-rose-950/40 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-800"
-            title={job?.error_message || doc.metadata?.error || "Processing failed"}
+            title={job?.diagnosis || job?.error_message || doc.metadata?.error || "Processing failed"}
           >
             <AlertCircle className="w-3 h-3 text-rose-600" />
             Failed

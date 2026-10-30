@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.core.logging_config import get_correlation_id, set_correlation_id
+from app.core.sanitizer import sanitize_error_detail, sanitize_log_message
 from app.models.chunk import DocumentChunk
 from app.models.document import Document
 from app.models.job import DocumentJob
@@ -237,12 +239,14 @@ class DocumentJobService:
         await db.refresh(document)
         return job, True
 
-    def dispatch_background_job(self, job_id: uuid.UUID) -> None:
+    def dispatch_background_job(self, job_id: uuid.UUID, correlation_id: Optional[str] = None) -> None:
         """
         Dispatches background worker task using asyncio.create_task.
         Maintains reference in active_tasks to prevent garbage collection.
+        Propagates correlation ID into background task context.
         """
-        task = asyncio.create_task(self.run_job(job_id=job_id))
+        cid = correlation_id or get_correlation_id()
+        task = asyncio.create_task(self.run_job(job_id=job_id, correlation_id=cid))
         self._active_tasks[job_id] = task
 
         def _cleanup(t: asyncio.Task):
@@ -252,14 +256,19 @@ class DocumentJobService:
 
         task.add_done_callback(_cleanup)
 
-    async def run_job(self, job_id: uuid.UUID) -> DocumentJob:
+    async def run_job(self, job_id: uuid.UUID, correlation_id: Optional[str] = None) -> DocumentJob:
         """
         Executes background document processing pipeline with:
         - Concurrency bounding via Semaphore
         - Stage progress reporting: extracting -> chunking -> embedding -> indexing -> completed
+        - Duration tracking and structured logging with correlation IDs
+        - Safe, bounded error reporting with credential redaction
         - Bounded retries with exponential backoff on transient errors
         - Timeout protection (DOCUMENT_PROCESSING_TIMEOUT_SECONDS)
         """
+        if correlation_id:
+            set_correlation_id(correlation_id)
+
         async with self.semaphore:
             async with AsyncSessionLocal() as db:
                 stmt = select(DocumentJob).where(DocumentJob.id == job_id)
@@ -277,15 +286,19 @@ class DocumentJobService:
                     job.stage = "failed"
                     job.error_message = "Associated document was deleted."
                     job.completed_at = datetime.now(timezone.utc)
+                    j_meta = dict(job.metadata_ or {})
+                    j_meta["failure_category"] = "document_missing"
+                    job.metadata_ = j_meta
                     await db.commit()
                     return job
 
                 # Set started state
+                start_time = datetime.now(timezone.utc)
                 job.status = "processing"
                 job.stage = "extracting"
                 job.current_stage = 1
                 job.progress = 10
-                job.started_at = datetime.now(timezone.utc)
+                job.started_at = start_time
                 document.status = "processing"
                 await db.commit()
 
@@ -303,10 +316,19 @@ class DocumentJobService:
                     document = d_res.scalar_one()
 
                     timeout_msg = f"Document processing timed out after {settings.DOCUMENT_PROCESSING_TIMEOUT_SECONDS} seconds."
+                    end_time = datetime.now(timezone.utc)
                     job.status = "failed"
                     job.stage = "failed"
                     job.error_message = timeout_msg
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.completed_at = end_time
+
+                    duration = round((end_time - (job.started_at or start_time)).total_seconds(), 2)
+                    j_meta = dict(job.metadata_ or {})
+                    j_meta["duration_seconds"] = duration
+                    j_meta["duration_ms"] = int(duration * 1000)
+                    j_meta["failure_category"] = "timeout_error"
+                    j_meta["timeout_seconds"] = settings.DOCUMENT_PROCESSING_TIMEOUT_SECONDS
+                    job.metadata_ = j_meta
 
                     document.status = "failed"
                     d_meta = dict(document.metadata_ or {})
@@ -315,22 +337,42 @@ class DocumentJobService:
 
                     await db.commit()
                 except Exception as exc:
-                    logger.error(f"Job {job.id} failed with unhandled exception: {exc}", exc_info=True)
+                    sanitized_err = sanitize_error_detail(exc, max_length=500)
+                    logger.error(f"Job {job.id} failed with unhandled exception: {sanitized_err}", exc_info=True)
                     await db.rollback()
                     res = await db.execute(select(DocumentJob).where(DocumentJob.id == job_id))
                     job = res.scalar_one()
                     d_res = await db.execute(select(Document).where(Document.id == job.document_id))
                     document = d_res.scalar_one()
 
-                    err_msg = str(exc)
+                    end_time = datetime.now(timezone.utc)
                     job.status = "failed"
                     job.stage = "failed"
-                    job.error_message = err_msg
-                    job.completed_at = datetime.now(timezone.utc)
+                    job.error_message = sanitized_err
+                    job.completed_at = end_time
+
+                    err_str = str(exc).lower()
+                    if isinstance(exc, (EmbeddingError, MissingEmbeddingConfigurationError, DimensionMismatchError)) or "embed" in err_str:
+                        category = "embedding_provider_error"
+                    elif isinstance(exc, ExtractionError) or "extract" in err_str:
+                        category = "extraction_error"
+                    elif "database" in err_str or "asyncpg" in err_str or "operationalerror" in err_str or "connection" in err_str:
+                        category = "database_error"
+                    elif "timeout" in err_str:
+                        category = "timeout_error"
+                    else:
+                        category = "pipeline_failure"
+
+                    duration = round((end_time - (job.started_at or start_time)).total_seconds(), 2)
+                    j_meta = dict(job.metadata_ or {})
+                    j_meta["duration_seconds"] = duration
+                    j_meta["duration_ms"] = int(duration * 1000)
+                    j_meta["failure_category"] = category
+                    job.metadata_ = j_meta
 
                     document.status = "failed"
                     d_meta = dict(document.metadata_ or {})
-                    d_meta["error"] = err_msg
+                    d_meta["error"] = sanitized_err
                     document.metadata_ = d_meta
 
                     await db.commit()
@@ -499,14 +541,18 @@ class DocumentJobService:
         job.status = "completed"
         job.stage = "completed"
         job.progress = 100
-        job.completed_at = datetime.now(timezone.utc)
+        end_time = datetime.now(timezone.utc)
+        job.completed_at = end_time
         job.error_message = None
+        duration = round((end_time - (job.started_at or end_time)).total_seconds(), 2)
         job_meta = dict(job.metadata_ or {})
         job_meta.update({
             "total_chunks": len(chunks),
             "total_pages": extracted.total_pages,
             "total_units": extracted.total_units,
             "completed_stage": 4,
+            "duration_seconds": duration,
+            "duration_ms": int(duration * 1000),
         })
         job.metadata_ = job_meta
 
@@ -523,6 +569,7 @@ class DocumentJobService:
         """
         Embeds chunks with bounded retries and exponential backoff with jitter
         for transient OpenAI / network exceptions.
+        Guarantees that error logs and retry metadata are strictly sanitized.
         """
         if not chunks:
             return []
@@ -538,26 +585,29 @@ class DocumentJobService:
             except TRANSIENT_EXCEPTIONS as exc:
                 attempt += 1
                 job.retry_count = attempt
+                sanitized_exc = sanitize_error_detail(exc, max_length=200)
                 job_meta = dict(job.metadata_ or {})
                 retry_log = job_meta.setdefault("retries", [])
                 retry_log.append({
                     "attempt": attempt,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
-                    "error": str(exc),
+                    "error": sanitized_exc,
                 })
                 job.metadata_ = job_meta
 
                 if attempt > max_retries:
-                    err = f"Embedding failed after {max_retries} retries: {str(exc)}"
+                    err = f"Embedding failed after {max_retries} retries: {sanitized_exc}"
                     job.error_message = err
+                    job_meta["failure_category"] = "retry_exhaustion"
+                    job.metadata_ = job_meta
                     await db.commit()
                     raise EmbeddingError(err)
 
                 # Exponential backoff with jitter
                 backoff_delay = min(30.0, (settings.DOCUMENT_PROCESSING_BASE_BACKOFF_SECONDS ** attempt) + random.uniform(0.1, 0.8))
-                job.error_message = f"Transient error on attempt {attempt}/{max_retries}: {str(exc)}. Retrying in {backoff_delay:.1f}s..."
+                job.error_message = f"Transient error on attempt {attempt}/{max_retries}: {sanitized_exc}. Retrying in {backoff_delay:.1f}s..."
                 await db.commit()
-                logger.warning(f"Transient error embedding doc {job.document_id} (attempt {attempt}/{max_retries}): {exc}. Sleeping {backoff_delay:.1f}s")
+                logger.warning(f"Transient error embedding doc {job.document_id} (attempt {attempt}/{max_retries}): {sanitized_exc}. Sleeping {backoff_delay:.1f}s")
                 await asyncio.sleep(backoff_delay)
             except Exception as non_transient:
                 # Permanent failure: configuration error, dimension mismatch, etc.
@@ -596,7 +646,7 @@ class DocumentJobService:
         await db.commit()
         await db.refresh(job)
 
-        self.dispatch_background_job(job.id)
+        self.dispatch_background_job(job.id, correlation_id=get_correlation_id())
         return job
 
     async def recover_interrupted_jobs(self, db: AsyncSession) -> Dict[str, Any]:
@@ -702,6 +752,117 @@ class DocumentJobService:
         }
         logger.info(f"Startup job recovery complete: {report}")
         return report
+
+    async def get_tenant_diagnostics(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> Dict[str, Any]:
+        """
+        Surfaces tenant-scoped background processing diagnostics:
+        - Stuck jobs (active longer than timeout)
+        - Exhausted retries
+        - Failure category distribution
+        - Actionable recommendations
+        """
+        stmt = (
+            select(DocumentJob)
+            .where(DocumentJob.user_id == user_id)
+            .order_by(desc(DocumentJob.created_at))
+            .limit(100)
+        )
+        res = await db.execute(stmt)
+        jobs = list(res.scalars().all())
+
+        stuck_jobs = []
+        recent_failed = []
+        failure_breakdown: Dict[str, int] = {}
+        active_count = 0
+        stuck_count = 0
+        exhausted_count = 0
+
+        for j in jobs:
+            if j.status in ("pending", "processing"):
+                active_count += 1
+                if j.is_stuck:
+                    stuck_count += 1
+                    stuck_jobs.append(j)
+            elif j.status == "failed":
+                recent_failed.append(j)
+                cat = j.failure_category or "unknown_error"
+                failure_breakdown[cat] = failure_breakdown.get(cat, 0) + 1
+                if j.retries_exhausted:
+                    exhausted_count += 1
+
+        recommendations = []
+        if stuck_count > 0:
+            recommendations.append(
+                f"{stuck_count} job(s) exceed timeout limit ({settings.DOCUMENT_PROCESSING_TIMEOUT_SECONDS}s). Trigger manual retry to resume."
+            )
+        if exhausted_count > 0:
+            recommendations.append(
+                f"{exhausted_count} job(s) exhausted retry limit. Verify downstream embedding provider and retry."
+            )
+        if not recommendations:
+            recommendations.append("All background document pipelines operating normally.")
+
+        return {
+            "tenant_scope": f"tenant-{str(user_id)[:8]}",
+            "timestamp": datetime.now(timezone.utc),
+            "active_jobs_count": active_count,
+            "stuck_jobs_count": stuck_count,
+            "retries_exhausted_count": exhausted_count,
+            "total_jobs_evaluated": len(jobs),
+            "stuck_jobs": stuck_jobs,
+            "recent_failed_jobs": recent_failed[:10],
+            "failure_category_breakdown": failure_breakdown,
+            "recommendations": recommendations,
+        }
+
+    async def get_tenant_operational_metrics(
+        self,
+        db: AsyncSession,
+        user_id: uuid.UUID,
+    ) -> Dict[str, Any]:
+        """
+        Aggregates operational reliability metrics for Evaluation & Telemetry dashboard.
+        """
+        stmt = (
+            select(DocumentJob)
+            .where(DocumentJob.user_id == user_id)
+            .order_by(desc(DocumentJob.created_at))
+            .limit(100)
+        )
+        res = await db.execute(stmt)
+        jobs = list(res.scalars().all())
+
+        total = len(jobs)
+        completed = sum(1 for j in jobs if j.status == "completed")
+        failed = sum(1 for j in jobs if j.status == "failed")
+        active = sum(1 for j in jobs if j.status in ("pending", "processing"))
+        stuck = sum(1 for j in jobs if j.is_stuck)
+        exhausted = sum(1 for j in jobs if j.retries_exhausted)
+
+        durations = [j.duration_seconds for j in jobs if j.duration_seconds is not None and j.duration_seconds > 0]
+        avg_duration = round(sum(durations) / len(durations), 2) if durations else 0.0
+        success_rate = round((completed / (completed + failed) * 100), 1) if (completed + failed) > 0 else 100.0
+
+        categories: Dict[str, int] = {}
+        for j in jobs:
+            if j.status == "failed" and j.failure_category:
+                categories[j.failure_category] = categories.get(j.failure_category, 0) + 1
+
+        return {
+            "total_jobs": total,
+            "completed_jobs": completed,
+            "failed_jobs": failed,
+            "active_jobs": active,
+            "stuck_jobs": stuck,
+            "retries_exhausted_jobs": exhausted,
+            "avg_duration_seconds": avg_duration,
+            "success_rate_pct": success_rate,
+            "failure_category_breakdown": categories,
+        }
 
 
 # Singleton instance

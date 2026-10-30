@@ -1,19 +1,24 @@
-from fastapi import APIRouter, Depends
+import logging
+import os
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_db
 from app.core.config import settings
+from app.core.logging_config import get_correlation_id
+from app.core.sanitizer import sanitize_error_detail
+from app.services.storage_service import storage_service
 
 router = APIRouter()
+logger = logging.getLogger("cogniva.health")
 
 
 @router.get("/health", tags=["health"])
 async def get_health():
     """
-    Liveness health check endpoint to verify backend service availability.
-    Returns status: ok as required by specification.
+    Liveness health check endpoint verifying application process availability.
+    Returns HTTP 200 independent of database connectivity.
     """
-    import os
     commit = os.environ.get("RENDER_GIT_COMMIT") or "latest"
     return {
         "status": "ok",
@@ -21,33 +26,32 @@ async def get_health():
         "version": settings.VERSION,
         "environment": settings.ENVIRONMENT,
         "commit": commit,
+        "correlation_id": get_correlation_id(),
     }
 
 
 @router.get("/health/ready", tags=["health"])
-async def get_readiness(db: AsyncSession = Depends(get_db)):
+async def get_readiness(response: Response, db: AsyncSession = Depends(get_db)):
     """
-    Readiness health check verifying PostgreSQL connectivity.
-    Executes SELECT 1 without exposing internal connection strings or credentials.
+    Readiness health check verifying PostgreSQL database connectivity.
+    Distinguishes application availability from database unavailability:
+    - Returns HTTP 200 when database is responsive.
+    - Returns HTTP 503 Service Unavailable when database connection fails.
+    Error details are bounded and strictly sanitized to prevent credential leakage.
     """
     db_status = "connected"
     detail = None
     try:
         await db.execute(text("SELECT 1"))
     except Exception as exc:
-        import logging
-        import re
-
         orig = getattr(exc, "orig", None)
         root_cause = orig if orig is not None else exc
         err_type = type(root_cause).__name__
-        raw_msg = str(root_cause)
 
-        # Sanitize error message to prevent credential or URL leakage
-        sanitized_msg = re.sub(r"://[^@]+@", "://***@", raw_msg)
-        sanitized_msg = re.sub(r"password=[^\s&]+", "password=***", sanitized_msg, flags=re.IGNORECASE)
-        sanitized_msg = sanitized_msg.splitlines()[0] if sanitized_msg else ""
-        # Extract target host safely without credentials to help diagnose DNS/host resolution issues
+        # Bounded and sanitized error message
+        sanitized_msg = sanitize_error_detail(str(root_cause), max_length=200)
+
+        # Extract target host safely without credentials for connection troubleshooting
         target_info = ""
         try:
             from sqlalchemy.engine.url import make_url
@@ -58,27 +62,66 @@ async def get_readiness(db: AsyncSession = Depends(get_db)):
             pass
 
         detail = f"{err_type}: {sanitized_msg}{target_info}".strip(": ")
-
-        # Log to uvicorn.error so Render console logs capture the exact failure
-        logging.getLogger("uvicorn.error").error(
-            "Database readiness check failed: %s",
-            detail,
-        )
+        logger.error("Database readiness check failed: %s", detail)
         db_status = "unavailable"
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
-    from app.services.storage_service import storage_service
-
-    response = {
-        "status": "ok" if db_status == "connected" else "degraded",
+    res_body = {
+        "status": "ok" if db_status == "connected" else "unhealthy",
         "database": db_status,
         "storage": storage_service.provider.provider_name,
         "storage_durable": storage_service.provider.is_durable,
         "app": settings.PROJECT_NAME,
         "environment": settings.ENVIRONMENT,
+        "correlation_id": get_correlation_id(),
     }
     if detail:
-        response["detail"] = detail
-    return response
+        res_body["detail"] = detail
+    return res_body
+
+
+@router.get("/health/diagnostics", tags=["health"])
+async def get_health_diagnostics(db: AsyncSession = Depends(get_db)):
+    """
+    Safe operational diagnostics endpoint providing system overview without
+    revealing credentials, API keys, or tenant data.
+    """
+    db_ok = False
+    try:
+        await db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        db_ok = False
+
+    commit = os.environ.get("RENDER_GIT_COMMIT") or "latest"
+    return {
+        "status": "healthy" if db_ok else "degraded",
+        "app": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "commit": commit,
+        "environment": settings.ENVIRONMENT,
+        "database": {
+            "status": "connected" if db_ok else "unavailable",
+            "dialect": "postgresql+asyncpg",
+        },
+        "storage": {
+            "provider": storage_service.provider.provider_name,
+            "durable": storage_service.provider.is_durable,
+        },
+        "models": {
+            "embedding_provider": settings.EMBEDDING_PROVIDER,
+            "embedding_model": settings.EMBEDDING_MODEL,
+            "embedding_dimension": settings.EMBEDDING_DIMENSION,
+            "llm_provider": settings.LLM_PROVIDER,
+            "llm_model": settings.LLM_MODEL,
+        },
+        "processing_limits": {
+            "timeout_seconds": settings.DOCUMENT_PROCESSING_TIMEOUT_SECONDS,
+            "max_retries": settings.DOCUMENT_PROCESSING_MAX_RETRIES,
+            "max_concurrency": settings.DOCUMENT_PROCESSING_MAX_CONCURRENCY,
+        },
+        "correlation_id": get_correlation_id(),
+    }
 
 
 @router.post("/health/migrate", tags=["health"])

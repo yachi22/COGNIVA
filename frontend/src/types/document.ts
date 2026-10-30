@@ -95,6 +95,11 @@ export interface DocumentJob {
   retry_count: number;
   max_retries: number;
   error_message?: string | null;
+  duration_seconds?: number | null;
+  is_stuck?: boolean;
+  retries_exhausted?: boolean;
+  failure_category?: string | null;
+  diagnosis?: string | null;
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
