@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
+from app.core.rate_limiter import rate_limit_llm
 from app.models.user import User
 from app.schemas.intelligence import (
     DocumentSummaryRequest,
@@ -29,6 +30,7 @@ router = APIRouter(tags=["intelligence"])
     "/documents/{document_id}/summarize",
     response_model=DocumentSummaryResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_llm)],
 )
 async def summarize_document(
     document_id: uuid.UUID,
@@ -59,6 +61,7 @@ async def summarize_document(
     "/documents/compare",
     response_model=DocumentComparisonResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_llm)],
 )
 async def compare_documents(
     data: DocumentComparisonRequest,
@@ -86,6 +89,7 @@ async def compare_documents(
     "/documents/{document_id}/extract-structured",
     response_model=StructuredExtractionResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_llm)],
 )
 async def extract_structured_fields(
     document_id: uuid.UUID,
@@ -137,6 +141,7 @@ async def export_extracted_csv(
     "/reports/generate",
     response_model=ReportGenerateResponse,
     status_code=status.HTTP_200_OK,
+    dependencies=[Depends(rate_limit_llm)],
 )
 async def generate_research_report(
     data: ReportGenerateRequest,

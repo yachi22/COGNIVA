@@ -116,3 +116,4 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
         response.headers["X-Correlation-ID"] = correlation_id
         response.headers["X-Request-ID"] = correlation_id
         return response
+

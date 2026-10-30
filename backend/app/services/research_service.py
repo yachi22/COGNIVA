@@ -36,6 +36,19 @@ class ResearchService:
                 detail="Research prompt cannot be empty.",
             )
 
+        # 0. Upfront tenant authorization check for scoped document
+        if document_id is not None:
+            doc_stmt = select(Document).where(
+                Document.id == document_id,
+                Document.user_id == user_id,
+            )
+            doc_res = await db.execute(doc_stmt)
+            if not doc_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Document not found or access denied.",
+                )
+
         # 1. Step 1: Decompose problem into explicit subquestions using LLM
         decomp_prompt = (
             f"You are an enterprise research orchestrator. Decompose the following strategic inquiry into 2 to {max_subquestions} focused, factual subquestions.\n\n"

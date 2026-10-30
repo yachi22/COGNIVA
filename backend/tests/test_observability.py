@@ -379,3 +379,4 @@ async def test_correlation_id_middleware_generates_and_propagates():
     resp_custom = await middleware.dispatch(req_custom, mock_call_next_custom)
     assert resp_custom.headers.get("X-Correlation-ID") == custom_trace
     assert resp_custom.headers.get("X-Request-ID") == custom_trace
+

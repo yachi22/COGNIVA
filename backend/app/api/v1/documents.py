@@ -21,6 +21,8 @@ from app.schemas.job import (
     DocumentJobDiagnosticsResponse,
 )
 from app.core.logging_config import get_correlation_id
+from app.core.rate_limiter import rate_limit_upload
+from app.services.audit_service import audit_service
 from app.services.document_service import document_service
 from app.services.job_service import document_job_service
 
@@ -33,6 +35,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
     status_code=status.HTTP_201_CREATED,
     summary="Upload an enterprise document (PDF or DOCX)",
     description="Uploads a PDF or DOCX file, validates format and magic bytes, stores the file securely, registers the document record in PostgreSQL, and processes text extraction.",
+    dependencies=[Depends(rate_limit_upload)],
 )
 async def upload_document(
     file: UploadFile = File(..., description="Document file (.pdf or .docx)"),
@@ -48,6 +51,14 @@ async def upload_document(
         user=current_user,
         file=file,
         auto_process=auto_process,
+    )
+    await audit_service.log_event(
+        db=db,
+        action="DOCUMENT_UPLOAD",
+        resource_type="document",
+        user_id=current_user.id,
+        resource_id=str(document.id),
+        details={"filename": document.filename, "file_type": document.file_type},
     )
     return DocumentResponse.model_validate(document)
 
@@ -116,6 +127,7 @@ async def get_document(
     response_model=DocumentResponse,
     summary="Trigger text extraction pipeline for a document",
     description="Executes text extraction, chunking, and vector embedding. Defaults to asynchronous background job processing with stage progress tracking.",
+    dependencies=[Depends(rate_limit_upload)],
 )
 async def process_document(
     document_id: uuid.UUID,
@@ -348,6 +360,13 @@ async def delete_document(
         db=db,
         user_id=current_user.id,
         document_id=document_id,
+    )
+    await audit_service.log_event(
+        db=db,
+        action="DOCUMENT_DELETE",
+        resource_type="document",
+        user_id=current_user.id,
+        resource_id=str(document_id),
     )
     return DocumentDeleteResponse(
         message="Document deleted successfully.",

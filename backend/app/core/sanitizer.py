@@ -10,9 +10,9 @@ SENSITIVE_PATTERNS = [
     # Database connection passwords in URLs (e.g. postgresql://user:pass@host:5432)
     (re.compile(r"(:\/\/[^:]+:)[^@]+(@)"), r"\1***\2"),
     # URL encoded and query-string passwords
-    (re.compile(r"(?i)(password|passwd|pwd|secret|access_token|api_key|apikey|secret_key)(=|:\s*)[^\s,;&'\"]+"), r"\1\2[REDACTED]"),
+    (re.compile(r"(?i)(password|passwd|pwd|secret|access_token|api_key|apikey|secret_key)(=|:\s*)(?:['\"][^'\"]*['\"]|[^\s,;&'\"]+)"), r"\1\2[REDACTED]"),
     # Authorization header formats
-    (re.compile(r"(?i)(authorization:\s*)(basic|bearer|token)\s+[^\s,;&'\"]+"), r"\1\2 [REDACTED]"),
+    (re.compile(r"(?i)(authorization:\s*)(basic|bearer|token)\s+(?:['\"][^'\"]*['\"]|[^\s,;&'\"]+)"), r"\1\2 [REDACTED]"),
 ]
 
 SENSITIVE_KEYS = {
@@ -87,3 +87,4 @@ def sanitize_dictionary(data: Dict[str, Any], max_depth: int = 3) -> Dict[str, A
             sanitized[key] = value
 
     return sanitized
+

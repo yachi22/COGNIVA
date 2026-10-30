@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_current_user
+from app.core.rate_limiter import rate_limit_llm
 from app.models.user import User
 from app.schemas.intelligence import (
     DeepResearchRequest,
@@ -24,6 +25,7 @@ knowledge_graph_service = KnowledgeGraphService()
     response_model=DeepResearchResponse,
     status_code=status.HTTP_200_OK,
     summary="Execute multi-step evidence-grounded deep research",
+    dependencies=[Depends(rate_limit_llm)],
 )
 async def execute_deep_research(
     data: DeepResearchRequest,

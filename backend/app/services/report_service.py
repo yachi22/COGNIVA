@@ -66,10 +66,10 @@ class ReportService:
             )
             doc_res = await db.execute(doc_stmt)
             target_docs = doc_res.scalars().all()
-            if not target_docs:
+            if len(target_docs) != len(set(document_ids)):
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Specified documents not found or access denied.",
+                    detail="One or more specified documents not found or access denied.",
                 )
 
         # 3. Or default to all user's processed documents

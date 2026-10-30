@@ -1,12 +1,19 @@
+import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import uvicorn
 
 from app.core.config import settings
-from app.core.logging_config import setup_logging, CorrelationIdMiddleware
+from app.core.logging_config import setup_logging, CorrelationIdMiddleware, get_correlation_id
+from app.core.sanitizer import sanitize_error_detail
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.api.v1 import api_router
+
+logger = logging.getLogger("cogniva.main")
 
 # Initialize structured logging with correlation filter and credential redaction
 setup_logging()
@@ -60,6 +67,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Add security headers middleware (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Add correlation ID middleware for request tracing and structured logging
 app.add_middleware(CorrelationIdMiddleware)
 
@@ -79,8 +89,26 @@ app.add_middleware(
         "X-Request-ID",
         "X-Cogniva-Recovered",
         "X-Cogniva-Original-Binary-Available",
+        "Retry-After",
     ],
 )
+
+# Global unhandled exception handler ensuring no internal credentials, DB errors, or tracebacks leak
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    if isinstance(exc, (StarletteHTTPException, HTTPException)):
+        raise exc
+    cid = get_correlation_id()
+    sanitized = sanitize_error_detail(str(exc))
+    logger.error(f"Unhandled exception on {request.method} {request.url.path} [req_id:{cid}]: {sanitized}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "An internal server error occurred.",
+            "correlation_id": cid,
+        },
+        headers={"X-Correlation-ID": cid, "X-Request-ID": cid},
+    )
 
 # Register API v1 routes
 app.include_router(api_router, prefix=settings.API_V1_STR)

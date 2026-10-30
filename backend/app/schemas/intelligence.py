@@ -48,7 +48,7 @@ class StructuredExtractionResponse(BaseModel):
 class ReportGenerateRequest(BaseModel):
     topic: str = Field(..., min_length=3, max_length=1000, description="Research or report topic")
     title: Optional[str] = Field(None, max_length=255, description="Report title")
-    document_ids: Optional[List[uuid.UUID]] = Field(None, description="Scope to specific documents")
+    document_ids: Optional[List[uuid.UUID]] = Field(None, max_length=10, description="Scope to specific documents (max 10)")
     collection_id: Optional[uuid.UUID] = Field(None, description="Scope to a collection")
 
 
