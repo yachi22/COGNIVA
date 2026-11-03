@@ -39,6 +39,7 @@ This document provides a reference of all configuration options for Cogniva. **N
 | `SECRET_KEY` | string | `cogniva-super-secret...` | 64-char hex key for signing HS256 JWT tokens. Must be changed in production. |
 | `ALGORITHM` | string | `HS256` | JWT signing algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | integer | `1440` | JWT expiration duration in minutes (24 hours). |
+| `ADMIN_SECRET_KEY` | string | `None` | Optional secret key for administrative maintenance endpoints (`X-Admin-Key`). |
 
 ---
 

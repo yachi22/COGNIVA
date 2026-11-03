@@ -61,8 +61,12 @@ def pytest_collection_modifyitems(config, items):
             "test_retrieval.py",
         }
 
+        exempt_files = {"test_migration_security.py", "test_security_hardening.py"}
+
         for item in items:
             filename = str(item.fspath.basename) if hasattr(item, "fspath") else ""
+            if filename in exempt_files:
+                continue
             if filename in live_db_test_files:
                 item.add_marker(skip_pg)
                 continue

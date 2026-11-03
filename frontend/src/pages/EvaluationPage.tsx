@@ -388,19 +388,33 @@ export const EvaluationPage: React.FC = () => {
             </div>
           )}
 
-          {/* SECTION 2: Deterministic Retrieval & Accuracy Benchmarks */}
+          {/* SECTION 2: Evaluation Results & Architectural Target Thresholds */}
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-accent" />
                 <h3 className="text-sm font-semibold text-primary uppercase tracking-wider">
-                  Retrieval Accuracy & Grounding Benchmarks
+                  Retrieval Accuracy & Grounding Specifications
                 </h3>
               </div>
-              <Badge variant="neutral" className="text-[11px] font-mono">
-                {metrics.benchmark_metrics.dataset}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED" ? (
+                  <Badge variant="warning" className="text-[11px] font-mono bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20">
+                    STATUS: NOT EVALUATED (TARGET THRESHOLDS)
+                  </Badge>
+                ) : (
+                  <Badge variant="neutral" className="text-[11px] font-mono">
+                    {metrics.benchmark_metrics.dataset}
+                  </Badge>
+                )}
+              </div>
             </div>
+
+            {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED" && (
+              <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+                <strong>Benchmark Governance Notice:</strong> No offline empirical benchmark dataset has been executed on this deployment. Displaying target architectural thresholds. Empirical metrics are labeled <strong>NOT EVALUATED</strong> until an automated benchmark dataset runs.
+              </div>
+            )}
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Retrieval Hit Rate @ 5 */}
@@ -409,13 +423,15 @@ export const EvaluationPage: React.FC = () => {
                   Retrieval Hit Rate @ 5
                 </span>
                 <p className="text-2xl font-bold text-primary mt-1">
-                  {(metrics.benchmark_metrics.retrieval_hit_rate_at_5 * 100).toFixed(1)}%
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                    ? `≥ ${((metrics.benchmark_metrics.target_hit_rate_at_5 ?? 0.90) * 100).toFixed(0)}% (Target)`
+                    : `${(metrics.benchmark_metrics.retrieval_hit_rate_at_5 * 100).toFixed(1)}%`}
                 </p>
                 <div className="w-full bg-panel rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className="bg-emerald-500 h-1.5 rounded-full"
                     style={{
-                      width: `${metrics.benchmark_metrics.retrieval_hit_rate_at_5 * 100}%`,
+                      width: `${(metrics.benchmark_metrics.target_hit_rate_at_5 ?? metrics.benchmark_metrics.retrieval_hit_rate_at_5) * 100}%`,
                     }}
                   />
                 </div>
@@ -430,13 +446,15 @@ export const EvaluationPage: React.FC = () => {
                   Mean Reciprocal Rank (MRR)
                 </span>
                 <p className="text-2xl font-bold text-primary mt-1">
-                  {metrics.benchmark_metrics.retrieval_mrr.toFixed(3)}
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                    ? `≥ ${(metrics.benchmark_metrics.target_mrr ?? 0.850).toFixed(3)} (Target)`
+                    : metrics.benchmark_metrics.retrieval_mrr.toFixed(3)}
                 </p>
                 <div className="w-full bg-panel rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className="bg-emerald-500 h-1.5 rounded-full"
                     style={{
-                      width: `${metrics.benchmark_metrics.retrieval_mrr * 100}%`,
+                      width: `${(metrics.benchmark_metrics.target_mrr ?? metrics.benchmark_metrics.retrieval_mrr) * 100}%`,
                     }}
                   />
                 </div>
@@ -451,13 +469,15 @@ export const EvaluationPage: React.FC = () => {
                   Faithfulness Score
                 </span>
                 <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                  {(metrics.benchmark_metrics.groundedness_faithfulness_score * 100).toFixed(1)}%
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                    ? `≥ ${((metrics.benchmark_metrics.target_faithfulness_score ?? 0.95) * 100).toFixed(0)}% (Target)`
+                    : `${(metrics.benchmark_metrics.groundedness_faithfulness_score * 100).toFixed(1)}%`}
                 </p>
                 <div className="w-full bg-panel rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
                     className="bg-emerald-500 h-1.5 rounded-full"
                     style={{
-                      width: `${metrics.benchmark_metrics.groundedness_faithfulness_score * 100}%`,
+                      width: `${(metrics.benchmark_metrics.target_faithfulness_score ?? metrics.benchmark_metrics.groundedness_faithfulness_score) * 100}%`,
                     }}
                   />
                 </div>
@@ -472,7 +492,9 @@ export const EvaluationPage: React.FC = () => {
                   Hallucination Rate
                 </span>
                 <p className="text-2xl font-bold text-accent mt-1">
-                  {metrics.benchmark_metrics.hallucination_rate_pct.toFixed(1)}%
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                    ? `≤ ${(metrics.benchmark_metrics.target_max_hallucination_rate_pct ?? 2.0).toFixed(1)}% (Target)`
+                    : `${metrics.benchmark_metrics.hallucination_rate_pct.toFixed(1)}%`}
                 </p>
                 <div className="w-full bg-panel rounded-full h-1.5 mt-2 overflow-hidden">
                   <div
@@ -490,11 +512,15 @@ export const EvaluationPage: React.FC = () => {
               <span>
                 Standardized Evaluation Corpus:{" "}
                 <strong className="text-primary font-medium">
-                  {metrics.benchmark_metrics.queries_evaluated} multi-turn enterprise queries
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                    ? "NOT EVALUATED (0 queries executed)"
+                    : `${metrics.benchmark_metrics.queries_evaluated} multi-turn enterprise queries`}
                 </strong>
               </span>
               <span className="font-mono text-[11px]">
-                Deterministic Provider: Active
+                {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                  ? "Empirical Benchmark: Pending"
+                  : "Deterministic Provider: Active"}
               </span>
             </div>
           </div>

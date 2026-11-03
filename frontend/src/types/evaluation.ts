@@ -18,6 +18,27 @@ export interface EvaluationMetricsResponse {
     groundedness_faithfulness_score: number;
     hallucination_rate_pct: number;
     evaluated_revision: string;
+    evaluation_status?: string;
+    is_evaluated?: boolean;
+    notice?: string;
+    target_hit_rate_at_5?: number;
+    target_mrr?: number;
+    target_faithfulness_score?: number;
+    target_max_hallucination_rate_pct?: number;
+  };
+  evaluation_results?: {
+    status: string;
+    dataset?: string;
+    queries_evaluated?: number;
+    notice?: string;
+  };
+  target_thresholds?: {
+    dataset?: string;
+    target_hit_rate_at_5: number;
+    target_mrr: number;
+    target_faithfulness_score: number;
+    target_max_hallucination_rate_pct: number;
+    description?: string;
   };
   provider_telemetry: {
     embedding_model: string;

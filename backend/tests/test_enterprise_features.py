@@ -422,8 +422,12 @@ async def test_evaluation_service_contract_conformance():
 
     bm = metrics["benchmark_metrics"]
     assert "dataset" in bm
-    assert bm["groundedness_faithfulness_score"] >= 0.90
-    assert bm["hallucination_rate_pct"] == 0.8
+    assert bm["evaluation_status"] == "NOT EVALUATED"
+    assert bm["is_evaluated"] is False
+    assert bm["target_faithfulness_score"] >= 0.90
+    assert "target_thresholds" in metrics
+    assert "evaluation_results" in metrics
+    assert metrics["evaluation_results"]["status"] == "NOT EVALUATED"
 
     pt = metrics["provider_telemetry"]
     assert pt["vector_dimension"] == 1536

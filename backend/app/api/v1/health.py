@@ -3,7 +3,7 @@ import os
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_db
+from app.api.deps import get_db, require_admin_access
 from app.core.config import settings
 from app.core.logging_config import get_correlation_id
 from app.core.sanitizer import sanitize_error_detail
@@ -124,13 +124,19 @@ async def get_health_diagnostics(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.post("/health/migrate", tags=["health"])
+@router.post(
+    "/health/migrate",
+    tags=["health"],
+    dependencies=[Depends(require_admin_access)],
+    summary="Trigger administrative database migrations",
+    description="Ensures Alembic migrations and required schema tables exist. Strictly restricted to authorized administrators.",
+)
 async def run_db_migrations(db: AsyncSession = Depends(get_db)):
     """
     Ensures Alembic migrations and required schema tables are up to date.
-    Safe and idempotent.
+    Strictly protected: requires valid administrative authorization (X-Admin-Key or Superuser).
+    Schema details are never exposed to prevent information disclosure.
     """
-    import os
     status_report = {}
 
     # 1. Alembic upgrade head
@@ -143,9 +149,10 @@ async def run_db_migrations(db: AsyncSession = Depends(get_db)):
             command.upgrade(alembic_cfg, "head")
             status_report["alembic"] = "success"
         else:
-            status_report["alembic"] = f"ini_not_found at {alembic_ini}"
+            status_report["alembic"] = "skipped"
     except Exception as exc:
-        status_report["alembic_error"] = str(exc)
+        status_report["alembic"] = "error"
+        logger.error(f"Administrative migration error: {sanitize_error_detail(str(exc))}")
 
     # 2. Base.metadata.create_all fallback
     try:
@@ -155,22 +162,28 @@ async def run_db_migrations(db: AsyncSession = Depends(get_db)):
             await conn.run_sync(Base.metadata.create_all)
         status_report["create_all"] = "success"
     except Exception as exc:
-        status_report["create_all_error"] = str(exc)
+        status_report["create_all"] = "error"
+        logger.error(f"Base.metadata.create_all error: {sanitize_error_detail(str(exc))}")
 
-    # 3. Check existing tables in public schema
-    try:
-        res = await db.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name"))
-        status_report["tables"] = [row[0] for row in res.fetchall()]
-    except Exception as exc:
-        status_report["table_check_error"] = str(exc)
-
-    return status_report
+    # Clean, non-disclosing operational response without dumping database catalog
+    return {
+        "status": "completed",
+        "alembic": status_report.get("alembic", "skipped"),
+        "create_all": status_report.get("create_all", "skipped"),
+    }
 
 
-@router.post("/health/migrate-storage", tags=["health"])
+@router.post(
+    "/health/migrate-storage",
+    tags=["health"],
+    dependencies=[Depends(require_admin_access)],
+    summary="Trigger administrative storage migration",
+    description="Migrates document binaries from ephemeral disk to durable object storage. Strictly restricted to authorized administrators.",
+)
 async def run_storage_migration(db: AsyncSession = Depends(get_db)):
     """
     Idempotent and resumable storage migration endpoint.
+    Strictly protected: requires valid administrative authorization (X-Admin-Key or Superuser).
     Safely migrates documents from ephemeral disk to durable object storage (S3/R2)
     after verifying byte integrity, preserving all database chunks and vector indices.
     """

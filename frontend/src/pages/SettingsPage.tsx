@@ -508,16 +508,27 @@ export const SettingsPage: React.FC = () => {
 
               {/* Offline Benchmark Quality Scores */}
               <div>
-                <h4 className="text-xs font-semibold text-primary uppercase tracking-wider mb-3">
-                  Benchmark Accuracy Scores ({metrics.benchmark_metrics.dataset})
-                </h4>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h4 className="text-xs font-semibold text-primary uppercase tracking-wider">
+                    {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                      ? "Target Accuracy Specifications (Not Evaluated)"
+                      : `Benchmark Accuracy Scores (${metrics.benchmark_metrics.dataset})`}
+                  </h4>
+                  {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED" && (
+                    <span className="text-[10px] font-mono uppercase bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded border border-amber-500/20">
+                      Target Thresholds
+                    </span>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <div className="p-3.5 rounded-lg border border-border bg-panel/30">
                     <span className="text-[10px] text-secondary uppercase font-semibold">
                       Retrieval Hit Rate @ 5
                     </span>
                     <p className="text-lg font-bold text-primary mt-1">
-                      {(metrics.benchmark_metrics.retrieval_hit_rate_at_5 * 100).toFixed(1)}%
+                      {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                        ? `≥ ${((metrics.benchmark_metrics.target_hit_rate_at_5 ?? 0.90) * 100).toFixed(0)}%`
+                        : `${(metrics.benchmark_metrics.retrieval_hit_rate_at_5 * 100).toFixed(1)}%`}
                     </p>
                   </div>
                   <div className="p-3.5 rounded-lg border border-border bg-panel/30">
@@ -525,7 +536,9 @@ export const SettingsPage: React.FC = () => {
                       Mean Reciprocal Rank (MRR)
                     </span>
                     <p className="text-lg font-bold text-primary mt-1">
-                      {metrics.benchmark_metrics.retrieval_mrr.toFixed(3)}
+                      {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                        ? `≥ ${(metrics.benchmark_metrics.target_mrr ?? 0.850).toFixed(3)}`
+                        : metrics.benchmark_metrics.retrieval_mrr.toFixed(3)}
                     </p>
                   </div>
                   <div className="p-3.5 rounded-lg border border-border bg-panel/30">
@@ -533,7 +546,9 @@ export const SettingsPage: React.FC = () => {
                       Faithfulness Score
                     </span>
                     <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400 mt-1">
-                      {(metrics.benchmark_metrics.groundedness_faithfulness_score * 100).toFixed(1)}%
+                      {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                        ? `≥ ${((metrics.benchmark_metrics.target_faithfulness_score ?? 0.95) * 100).toFixed(0)}%`
+                        : `${(metrics.benchmark_metrics.groundedness_faithfulness_score * 100).toFixed(1)}%`}
                     </p>
                   </div>
                   <div className="p-3.5 rounded-lg border border-border bg-panel/30">
@@ -541,7 +556,9 @@ export const SettingsPage: React.FC = () => {
                       Hallucination Rate
                     </span>
                     <p className="text-lg font-bold text-accent mt-1">
-                      {metrics.benchmark_metrics.hallucination_rate_pct}%
+                      {metrics.benchmark_metrics.evaluation_status === "NOT EVALUATED"
+                        ? `≤ ${(metrics.benchmark_metrics.target_max_hallucination_rate_pct ?? 2.0).toFixed(1)}%`
+                        : `${metrics.benchmark_metrics.hallucination_rate_pct}%`}
                     </p>
                   </div>
                 </div>

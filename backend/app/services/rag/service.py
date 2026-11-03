@@ -1,4 +1,5 @@
 import logging
+import time
 import uuid
 from typing import Optional
 from fastapi import HTTPException, status
@@ -186,9 +187,11 @@ class RAGService:
         )
 
         # 7. Call LLM provider (exceptions bubble up without saving fake answers)
+        llm_start_time = time.perf_counter()
         try:
             llm_res = await self.llm_service.generate(messages)
             answer = llm_res.content.strip()
+            gen_duration_ms = round((time.perf_counter() - llm_start_time) * 1000, 1)
         except MissingLLMConfigurationError as e:
             logger.error(f"LLM configuration missing: {str(e)}")
             raise HTTPException(
@@ -251,6 +254,7 @@ class RAGService:
                 "sources": sources_payload,
                 "citations": citations_payload,
                 "insufficient_evidence": is_insufficient,
+                "duration_ms": gen_duration_ms,
             },
         )
 

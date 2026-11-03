@@ -1,0 +1,24 @@
+version: "3.8"
+
+# Cogniva Zero-Cost PostgreSQL + pgvector Test Environment
+# Spawns an isolated in-memory test database completely separated from development & production.
+# Data is mounted on tmpfs (RAM) ensuring blazing test execution and instant, clean teardown.
+
+services:
+  db_test:
+    image: pgvector/pgvector:pg16
+    container_name: cogniva-db-test
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: cogniva_test
+    ports:
+      - "5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d cogniva_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    restart: "no"
