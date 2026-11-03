@@ -74,3 +74,4 @@ try {
         Write-Host "`nContainer kept alive for debugging (cogniva-db-test)." -ForegroundColor Magenta
     }
 }
+

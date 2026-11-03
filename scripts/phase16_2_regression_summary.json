@@ -1,0 +1,66 @@
+{
+  "health_probe": {
+    "status": "PASS",
+    "version": "0.1.5",
+    "commit": "bcaaa2b4233dfc99de861c9b18704d319205bf2d",
+    "latency_ms": 5665.96
+  },
+  "readiness_probe": {
+    "status": "PASS",
+    "database": "connected",
+    "storage": "local",
+    "storage_durable": false
+  },
+  "diagnostics_probe": {
+    "status": "PASS",
+    "embedding_provider": "mock",
+    "llm_provider": "mock"
+  },
+  "migration_security": {
+    "status": "PASS",
+    "migrate_status": 401,
+    "migrate_storage_status": 401
+  },
+  "auth": {
+    "status": "PASS",
+    "user_id": "bcc74069-e03d-48ec-b271-447eda73603b",
+    "email": "phase16_2_regression_450eda9b@cogniva.ai"
+  },
+  "document_processing": {
+    "status": "PASS",
+    "doc_id": "6e3d3f48-b715-45be-9461-5606c44bdda3",
+    "job_id": "c4bdf0da-2ddf-4efd-ba75-a462fc7ca3af",
+    "duration_seconds": 6.6
+  },
+  "rag": {
+    "status": "PASS",
+    "retrieval_latency_ms": 3802.46,
+    "rag_latency_ms": 9660.88,
+    "citation_count": 1
+  },
+  "summarization": {
+    "status": "PASS",
+    "latency_ms": 12132.78
+  },
+  "collections": {
+    "status": "PASS",
+    "col_id": "9eea585f-483c-46b3-ba3b-4597a96289af"
+  },
+  "evaluation_transparency": {
+    "status": "PASS",
+    "evaluation_status": "NOT EVALUATED"
+  },
+  "recovery_headers": {
+    "status": "PASS",
+    "recovered": "false",
+    "binary_available": "true"
+  },
+  "document_deletion": {
+    "status": "PASS",
+    "post_delete_status": 404
+  },
+  "audit_logging": {
+    "status": "PASS",
+    "events_recorded": 7
+  }
+}

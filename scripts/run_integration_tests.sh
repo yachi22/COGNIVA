@@ -55,3 +55,4 @@ if [ -d ".venv" ]; then
 else
     pytest -v --durations=10
 fi
+

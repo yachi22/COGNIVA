@@ -22,3 +22,4 @@ services:
       timeout: 3s
       retries: 15
     restart: "no"
+
