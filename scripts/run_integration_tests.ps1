@@ -57,6 +57,15 @@ try {
     $env:LLM_PROVIDER = "mock"
     $env:SECRET_KEY = "test-secret-key-for-local-integration-tests"
 
+    # 3.5 Apply Alembic database migrations
+    Write-Host "[3.5/4] Applying database schema migrations via Alembic..." -ForegroundColor Yellow
+    Push-Location backend
+    try {
+        .\.venv\Scripts\python.exe -m alembic upgrade head
+    } finally {
+        Pop-Location
+    }
+
     # 4. Run Pytest Suite
     Write-Host "[4/4] Executing backend test suite (unit + live pgvector integration)..." -ForegroundColor Yellow
     Push-Location backend

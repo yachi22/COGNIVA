@@ -19,7 +19,7 @@ interface UploadDropzoneProps {
 
 const MAX_FILE_SIZE_MB = 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
-const ALLOWED_EXTENSIONS = [".pdf", ".docx"];
+const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".csv"];
 
 export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
   onUpload,
@@ -41,7 +41,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
     const fileName = file.name.toLowerCase();
     const hasValidExt = ALLOWED_EXTENSIONS.some((ext) => fileName.endsWith(ext));
     if (!hasValidExt) {
-      setClientError("Unsupported format. Cogniva accepts PDF (.pdf) and Word (.docx) documents only.");
+      setClientError("Unsupported format. Cogniva accepts PDF (.pdf), Word (.docx), and CSV (.csv) documents only.");
       return;
     }
 
@@ -111,7 +111,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        accept=".pdf,.docx,.csv,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/csv"
         className="hidden"
         onChange={handleFileChange}
       />
@@ -137,7 +137,7 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
         </div>
 
         <h4 className="text-xs sm:text-sm font-semibold text-primary mb-1">
-          {isUploading ? "Uploading knowledge asset to Cogniva..." : "Drop PDF or DOCX file here, or browse files"}
+          {isUploading ? "Uploading knowledge asset to Cogniva..." : "Drop PDF, DOCX, or CSV file here, or browse files"}
         </h4>
         <p className="text-xs text-secondary max-w-md mx-auto mb-4">
           Upload enterprise documentation, research reports, policies, or contracts up to 50MB.
@@ -166,6 +166,10 @@ export const UploadDropzone: React.FC<UploadDropzoneProps> = ({
           <span>•</span>
           <span className="flex items-center gap-1 font-mono">
             <FileText className="w-3 h-3 text-secondary" /> Word (.docx)
+          </span>
+          <span>•</span>
+          <span className="flex items-center gap-1 font-mono">
+            <FileText className="w-3 h-3 text-secondary" /> CSV (.csv)
           </span>
           <span>•</span>
           <span>Max {MAX_FILE_SIZE_MB}MB</span>

@@ -283,7 +283,7 @@ export const Dashboard: React.FC = () => {
             <span className="text-2xl font-bold text-primary">{formatBytes(totalBytes)}</span>
           </div>
           <p className="mt-1 text-[11px] text-secondary">
-            PDF & DOCX storage in tenant pool
+            PDF, DOCX & CSV storage in tenant pool
           </p>
         </div>
       </div>
@@ -375,7 +375,7 @@ export const Dashboard: React.FC = () => {
               <EmptyState
                 icon={<FileText className="w-5 h-5" />}
                 title="No documents uploaded"
-                description="Upload enterprise documentation (PDF or DOCX) to index semantic chunks."
+                description="Upload enterprise documentation (PDF, DOCX, or CSV) to index semantic chunks."
                 action={
                   <Link to="/documents">
                     <Button variant="outline" size="xs" icon={<Upload className="w-3 h-3" />}>
@@ -483,7 +483,7 @@ export const Dashboard: React.FC = () => {
           <EmptyState
             icon={<Sparkles className="w-5 h-5" />}
             title="No processed documents available for topic synthesis"
-            description="Upload and process PDF or DOCX documentation to generate executive topic summaries and key takeaway extractions."
+            description="Upload and process PDF, DOCX, or CSV documentation to generate executive topic summaries and key takeaway extractions."
             action={
               <Link to="/documents">
                 <Button variant="outline" size="xs" icon={<Upload className="w-3 h-3" />}>

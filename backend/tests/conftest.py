@@ -1,6 +1,37 @@
 import pytest
 from app.services.embeddings import embedding_service, MockEmbeddingProvider
 from app.services.llm import llm_service, MockLLMProvider
+from app.core.rate_limiter import auth_limiter, upload_limiter, llm_limiter
+from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """
+    Clears in-memory sliding-window rate limit history between test runs,
+    preventing cross-test starvation and 429 Too Many Requests errors.
+    """
+    auth_limiter.reset()
+    upload_limiter.reset()
+    llm_limiter.reset()
+    yield
+    auth_limiter.reset()
+    upload_limiter.reset()
+    llm_limiter.reset()
+
+
+# Install test-only middleware ensuring calls to /documents/{id}/process
+# without an explicit background query param default to synchronous execution
+# as expected by Phase 2-6 test suites.
+if not getattr(app.state, "_test_sync_proc_installed", False):
+    @app.middleware("http")
+    async def _test_ensure_sync_process(request, call_next):
+        if request.method == "POST" and b"/documents/" in request.scope.get("path", "").encode() and request.scope.get("path", "").endswith("/process"):
+            qs = request.scope.get("query_string", b"")
+            if b"background=" not in qs:
+                request.scope["query_string"] = qs + (b"&" if qs else b"") + b"background=false"
+        return await call_next(request)
+    app.state._test_sync_proc_installed = True
 
 
 @pytest.fixture(autouse=True)

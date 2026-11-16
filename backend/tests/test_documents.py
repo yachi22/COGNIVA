@@ -80,6 +80,23 @@ def test_document_upload_and_persistence():
             assert docx_doc_data["status"] == "uploaded"
             assert docx_doc_data["user_id"] == user_id
 
+            # 3b. Upload a valid CSV file
+            csv_content = b"Department,Budget,Headcount\nEngineering,5000000,45\nMarketing,2000000,18\n"
+            csv_file = {
+                "file": ("q3_allocations.csv", io.BytesIO(csv_content), "text/csv")
+            }
+            upload_csv_resp = await client.post(
+                "/api/v1/documents",
+                headers=headers,
+                files=csv_file,
+            )
+            assert upload_csv_resp.status_code == 201, f"CSV upload failed: {upload_csv_resp.text}"
+            csv_doc_data = upload_csv_resp.json()
+            assert csv_doc_data["original_filename"] == "q3_allocations.csv"
+            assert csv_doc_data["file_type"] == "csv"
+            assert csv_doc_data["status"] == "uploaded"
+            assert csv_doc_data["user_id"] == user_id
+
         # 4. Verify in PostgreSQL database directly
         async with AsyncSessionLocal() as session:
             stmt = select(Document).where(Document.id == uuid.UUID(pdf_doc_id))
@@ -139,6 +156,11 @@ def test_document_validation_and_rejection():
             fake_pdf = {"file": ("fake.pdf", io.BytesIO(b"This is not really a PDF file!"), "application/pdf")}
             fake_resp = await client.post("/api/v1/documents", headers=headers, files=fake_pdf)
             assert fake_resp.status_code == 400
+
+            # 5. Corrupted binary CSV with null bytes rejected
+            bad_csv = {"file": ("corrupt.csv", io.BytesIO(b"col1,col2\nval1,\x00\x00"), "text/csv")}
+            bad_csv_resp = await client.post("/api/v1/documents", headers=headers, files=bad_csv)
+            assert bad_csv_resp.status_code == 400
 
     asyncio.run(_test())
 

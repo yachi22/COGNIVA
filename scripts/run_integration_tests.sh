@@ -47,6 +47,16 @@ export EMBEDDING_PROVIDER="mock"
 export LLM_PROVIDER="mock"
 export SECRET_KEY="test-secret-key-for-local-integration-tests"
 
+# 3.5. Apply Alembic database migrations
+echo "[3.5/4] Applying database schema migrations via Alembic..."
+cd backend
+if [ -d ".venv" ]; then
+    .venv/bin/python -m alembic upgrade head
+else
+    alembic upgrade head
+fi
+cd ..
+
 # 4. Run Pytest Suite
 echo "[4/4] Executing backend test suite (unit + live pgvector integration)..."
 cd backend

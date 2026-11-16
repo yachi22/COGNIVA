@@ -53,7 +53,7 @@ export const useDocuments = () => {
       const message =
         err.response?.data?.detail ||
         err.message ||
-        "Upload failed. Please ensure the file is a valid PDF or DOCX under 50MB.";
+        "Upload failed. Please ensure the file is a valid PDF, DOCX, or CSV under 50MB.";
       setUploadError(message);
       return null;
     } finally {

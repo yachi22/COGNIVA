@@ -1051,7 +1051,7 @@ Comparative analysis across authorized documents reveals aligned strategic objec
         # Check for distinctive topic absence (e.g., 'dogs', 'pet', '401k')
         distinctive_terms = [
             w for w in effective_topical
-            if len(w) > 2 and w not in ("policy", "employee", "document", "acme", "technologies", "annual", "leave", "prototype", "system")
+            if len(w) > 2 and w not in ("policy", "employee", "document", "acme", "technologies", "annual", "leave", "prototype", "system", "entitlement", "entitlements")
         ]
         if distinctive_terms:
             distinctive_stems = {_mock_normalize_word(w) for w in distinctive_terms}
